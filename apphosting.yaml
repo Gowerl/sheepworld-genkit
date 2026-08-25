@@ -9,3 +9,37 @@ runConfig:
   concurrency: 80         # Max concurrent requests handled per container instance
   minInstances: 0         # Scales to zero when idle to minimize costs (introduces cold start)
   maxInstances: 5          # Prevents cost runaways under heavy traffic
+
+# Environment variables needed for the Next.js build and runtime
+# NEXT_PUBLIC_ variables must be available during BUILD to be compiled into the client JS bundle
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyD0m3xsU6ItrfpD4YE8chtOHz9uqGlJj5I"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "sheep-vertex-ai.firebaseapp.com"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "sheep-vertex-ai"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "sheep-vertex-ai.firebasestorage.app"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "513333570389"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:513333570389:web:f7d10938f63605f2b5dddc"
+    availability:
+      - BUILD
+      - RUNTIME
