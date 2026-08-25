@@ -16,13 +16,11 @@ const ai = genkit({
 
 // Helper to resolve the datastore ID
 const getDatastoreId = (inputDatastoreId?: string) => {
-  const id = inputDatastoreId || process.env.VERTEX_AI_DATASTORE_ID;
-  if (!id) {
-    throw new Error(
-      'Vertex AI Datastore ID is missing. Please set the VERTEX_AI_DATASTORE_ID environment variable or pass it in the request.'
-    );
-  }
-  return id;
+  return (
+    inputDatastoreId ||
+    process.env.VERTEX_AI_DATASTORE_ID ||
+    'datastorage-sheepworld-de_1787649919596'
+  );
 };
 
 // 2. Define the Search Flow
