@@ -1,0 +1,11 @@
+# apphosting.yaml
+# Firebase App Hosting Configuration for Next.js SSR App
+# Docs: https://firebase.google.com/docs/app-hosting/configure
+
+# Configure the Cloud Run service hosting the Next.js app
+runConfig:
+  cpu: 1                  # 1 CPU is optimal for standard Next.js workloads
+  memoryMiB: 1024         # 1024 MiB of RAM for server-rendering and bundling
+  concurrency: 80         # Max concurrent requests handled per container instance
+  minInstances: 0         # Scales to zero when idle to minimize costs (introduces cold start)
+  maxInstances: 5          # Prevents cost runaways under heavy traffic
