@@ -14,7 +14,7 @@ const firebaseConfig = {
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firebase Functions (using us-central1 region which is standard)
-const functions = getFunctions(app, 'us-central1');
+// Initialize Firebase Functions (using europe-west4 region)
+const functions = getFunctions(app, 'europe-west4');
 
 export { app, functions };

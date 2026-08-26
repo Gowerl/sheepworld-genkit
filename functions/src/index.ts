@@ -9,7 +9,7 @@ const ai = genkit({
   plugins: [
     vertexAI({
       projectId: projectId,
-      location: 'us-central1', // Vertex AI plugin location
+      location: 'europe-west4', // Vertex AI plugin location (Eemshaven)
     }),
   ],
 });
@@ -140,6 +140,7 @@ const chatFlow = ai.defineFlow(
 // 4. Export as Firebase Cloud Functions (Callable via Firebase SDK)
 export const search = onCallGenkit(
   {
+    region: 'europe-west4',
     enforceAppCheck: false, // Set to true in production once App Check is configured
   },
   searchFlow
@@ -147,6 +148,7 @@ export const search = onCallGenkit(
 
 export const chat = onCallGenkit(
   {
+    region: 'europe-west4',
     enforceAppCheck: false, // Set to true in production once App Check is configured
   },
   chatFlow
