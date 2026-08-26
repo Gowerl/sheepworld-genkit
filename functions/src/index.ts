@@ -1,6 +1,7 @@
 import { genkit, z } from 'genkit';
 import { vertexAI } from '@genkit-ai/vertexai';
 import { onCallGenkit } from 'firebase-functions/https';
+import { GoogleAuth } from 'google-auth-library';
 
 const projectId = process.env.GCLOUD_PROJECT || 'sheep-vertex-ai';
 
@@ -14,14 +15,68 @@ const ai = genkit({
   ],
 });
 
-// Helper to resolve the datastore ID
-const getDatastoreId = (inputDatastoreId?: string) => {
-  return (
-    inputDatastoreId ||
-    process.env.VERTEX_AI_DATASTORE_ID ||
-    'datastorage-sheepworld-de_1787649919596'
-  );
-};
+// Interface for search results internally
+interface SearchResult {
+  title: string;
+  uri: string;
+  snippet: string;
+}
+
+// Helper to search the Vertex AI Search Enterprise Engine
+async function searchVertexAISearch(query: string): Promise<SearchResult[]> {
+  try {
+    const auth = new GoogleAuth({
+      scopes: 'https://www.googleapis.com/auth/cloud-platform',
+    });
+    const client = await auth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    const token = tokenResponse.token;
+
+    const url = `https://eu-discoveryengine.googleapis.com/v1/projects/${projectId}/locations/eu/collections/default_collection/engines/sheepworld-enterprise_1787738222029/servingConfigs/default_search:search`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: query,
+        pageSize: 5,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Vertex AI Search API returned status ${response.status}: ${errorText}`);
+      return [];
+    }
+
+    const data = await response.json() as any;
+    const results = (data.results || []).map((res: any) => {
+      const doc = res.document || {};
+      const structData = doc.derivedStructData || {};
+      
+      // Extract clean snippets
+      let snippet = '';
+      if (structData.snippets && structData.snippets.length > 0) {
+        snippet = structData.snippets[0].snippet || '';
+      } else {
+        snippet = structData.htmlTitle || structData.title || '';
+      }
+
+      return {
+        title: structData.title || 'Web Result',
+        uri: structData.link || '',
+        snippet: snippet || '',
+      };
+    });
+    return results;
+  } catch (error) {
+    console.error('Error querying Vertex AI Search:', error);
+    return [];
+  }
+}
 
 // 2. Define the Search Flow
 // This flow uses Vertex AI Search Grounding to find information and returns both the summary and the source metadata
@@ -36,35 +91,24 @@ const searchFlow = ai.defineFlow(
     outputSchema: z.any(),
   },
   async (input) => {
-    const dataStoreId = getDatastoreId(input.dataStoreId);
-    const datastoreLocation = input.location || 'global'; // Datastores are typically in 'global' region
+    // 1. Retrieve context from Vertex AI Search
+    const results = await searchVertexAISearch(input.query);
 
-    // Call Gemini 1.5 Flash grounded with the Vertex AI Search Datastore
+    // 2. Build the grounded prompt for Gemini
+    let promptText = input.query;
+    if (results.length > 0) {
+      const contextText = results
+        .map((r, idx) => `[Source ${idx + 1}]: Title: ${r.title}\nURL: ${r.uri}\nSnippet: ${r.snippet}`)
+        .join('\n\n');
+      
+      promptText = `You are a helpful assistant for Sheepworld. Answer the user's query using the provided context from our website sheepworld.de. If the context does not contain the answer, you can use your general knowledge but clearly state that the information was not found on the official website. Always cite the Source numbers (e.g. [Source 1]) when you use information from them.\n\nContext:\n${contextText}\n\nUser Query: ${input.query}`;
+    }
+
+    // 3. Call Gemini 2.5 Flash to generate the response
     const response = await ai.generate({
-      model: 'vertexai/gemini-1.5-flash',
-      prompt: input.query,
-      config: {
-        vertexRetrieval: {
-          datastore: {
-            projectId: projectId,
-            location: datastoreLocation,
-            dataStoreId: dataStoreId,
-          },
-          disableAttribution: false,
-        },
-      },
+      model: 'vertexai/gemini-2.5-flash',
+      prompt: promptText,
     });
-
-    // Access the grounding metadata containing citations, snippets, and URIs
-    const candidate = (response as any).candidates?.[0];
-    const groundingMetadata = candidate?.groundingMetadata || {};
-
-    // Extract search results from grounding chunks
-    const results = (groundingMetadata.groundingChunks || []).map((chunk: any) => ({
-      title: chunk.web?.title || 'Web Result',
-      uri: chunk.web?.uri || '',
-      snippet: chunk.sourceText || '',
-    }));
 
     return {
       summary: response.text,
@@ -98,36 +142,34 @@ const chatFlow = ai.defineFlow(
     outputSchema: z.any(),
   },
   async (input) => {
-    const dataStoreId = getDatastoreId(input.dataStoreId);
-    const datastoreLocation = input.location || 'global';
-
     const history = input.history || [];
 
-    // Call Gemini with the conversational history and the new user message, grounded with Vertex AI Search
+    // 1. Retrieve context from Vertex AI Search
+    const results = await searchVertexAISearch(input.query);
+
+    // 2. Build grounded instructions for Gemini
+    let systemInstruction = "You are a helpful assistant for Sheepworld. Answer the user's queries.";
+    if (results.length > 0) {
+      const contextText = results
+        .map((r, idx) => `[Source ${idx + 1}]: Title: ${r.title}\nURL: ${r.uri}\nSnippet: ${r.snippet}`)
+        .join('\n\n');
+      
+      systemInstruction = `You are a helpful assistant for Sheepworld. Answer the user's query using the provided context from our website sheepworld.de. If the context does not contain the answer, you can use your general knowledge but clearly state that the information was not found on the official website. Always cite the Source numbers (e.g. [Source 1]) when you use information from them.\n\nContext:\n${contextText}`;
+    }
+
+    // 3. Call Gemini with conversational history
     const response = await ai.generate({
-      model: 'vertexai/gemini-1.5-flash',
+      model: 'vertexai/gemini-2.5-flash',
       messages: [
+        { role: 'system', content: [{ text: systemInstruction }] },
         ...history,
         { role: 'user', content: [{ text: input.query }] },
       ],
-      config: {
-        vertexRetrieval: {
-          datastore: {
-            projectId: projectId,
-            location: datastoreLocation,
-            dataStoreId: dataStoreId,
-          },
-          disableAttribution: false,
-        },
-      },
     });
 
-    const candidate = (response as any).candidates?.[0];
-    const groundingMetadata = candidate?.groundingMetadata || {};
-
-    const citations = (groundingMetadata.groundingChunks || []).map((chunk: any) => ({
-      title: chunk.web?.title || 'Source',
-      uri: chunk.web?.uri || '',
+    const citations = results.map((r) => ({
+      title: r.title,
+      uri: r.uri,
     }));
 
     return {

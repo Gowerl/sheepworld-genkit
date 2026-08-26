@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "genkit": "pnpm --filter functions genkit"
   },
   "dependencies": {
     "firebase": "^12.18.0",

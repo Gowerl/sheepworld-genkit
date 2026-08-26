@@ -20,10 +20,6 @@ interface ChatMessage {
 }
 
 export default function Home() {
-  // Config state
-  const [dataStoreId, setDataStoreId] = useState("");
-  const [showConfig, setShowConfig] = useState(false);
-
   // Tab navigation: 'search' | 'chat'
   const [activeTab, setActiveTab] = useState<"search" | "chat">("search");
 
@@ -47,19 +43,6 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, chatLoading]);
 
-  // Load configuration from local storage if available
-  useEffect(() => {
-    const savedDatastore = localStorage.getItem("vertex_ai_datastore_id");
-    if (savedDatastore) {
-      setDataStoreId(savedDatastore);
-    }
-  }, []);
-
-  const saveDatastoreId = (id: string) => {
-    setDataStoreId(id);
-    localStorage.setItem("vertex_ai_datastore_id", id);
-  };
-
   // Perform Classic Search
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +57,6 @@ export default function Home() {
       const searchFn = httpsCallable<any, any>(functions, "search");
       const response = await searchFn({
         query: searchQuery,
-        dataStoreId: dataStoreId || undefined,
       });
 
       const data = response.data;
@@ -116,7 +98,6 @@ export default function Home() {
       const response = await chatFn({
         query: userMessageText,
         history: historyPayload,
-        dataStoreId: dataStoreId || undefined,
       });
 
       const data = response.data;
@@ -152,42 +133,7 @@ export default function Home() {
             <p className={styles.subtitle}>Grounded Search & Chat powered by Vertex AI & Genkit</p>
           </div>
         </div>
-        <button
-          className={styles.configToggleBtn}
-          onClick={() => setShowConfig(!showConfig)}
-        >
-          {showConfig ? "⚙️ Hide Config" : "⚙️ Datastore Config"}
-        </button>
       </header>
-
-      {showConfig && (
-        <section className={styles.configCard}>
-          <h3 className={styles.configTitle}>Vertex AI Search Configuration</h3>
-          <p className={styles.configLabel}>
-            Enter your Google Cloud Vertex AI Search Data Store ID below. If left blank, the system will fall back to the server environment variable.
-          </p>
-          <div className={styles.configInputRow}>
-            <input
-              type="text"
-              className={styles.inputField}
-              placeholder="e.g. website-search-datastore-id"
-              value={dataStoreId}
-              onChange={(e) => saveDatastoreId(e.target.value)}
-            />
-            {dataStoreId && (
-              <button
-                className={styles.clearBtn}
-                onClick={() => saveDatastoreId("")}
-              >
-                Reset
-              </button>
-            )}
-          </div>
-          {dataStoreId && (
-            <p className={styles.configSavedNote}>✓ Configuration saved to browser storage.</p>
-          )}
-        </section>
-      )}
 
       {/* Main Tabs Navigation */}
       <nav className={styles.tabsNav}>

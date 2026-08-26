@@ -9,7 +9,7 @@
     "start": "pnpm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "genkit": "genkit start --"
+    "genkit": "genkit start -- tsx watch src/index.ts"
   },
   "engines": {
     "node": "22"
@@ -21,10 +21,12 @@
     "firebase-admin": "^13.1.0",
     "firebase-functions": "^6.3.0",
     "genkit": "^1.0.8",
+    "google-auth-library": "^11.0.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "genkit-cli": "^1.0.8",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.3"
   },
   "private": true
