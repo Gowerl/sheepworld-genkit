@@ -473,6 +473,16 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
 
+  // New SEO Generator State Variables
+  const [activeTab, setActiveTab] = useState<'chat' | 'seo'>('chat');
+  const [seoTopic, setSeoTopic] = useState("");
+  const [seoBulletPoints, setSeoBulletPoints] = useState("");
+  const [seoAudience, setSeoAudience] = useState("Endkunden (freundliches Du)");
+  const [seoKeywords, setSeoKeywords] = useState("");
+  const [seoProductUrl, setSeoProductUrl] = useState("");
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [seoResult, setSeoResult] = useState<any>(null);
+
   // Authentication states
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
@@ -669,6 +679,31 @@ export default function Home() {
     setError(null);
   };
 
+  const handleGenerateSEO = async () => {
+    if (!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading) return;
+
+    setSeoLoading(true);
+    setSeoResult(null);
+
+    try {
+      const generateSEOContentFn = httpsCallable<any, any>(functions, "generateSEOContent");
+      const response = await generateSEOContentFn({
+        topic: seoTopic,
+        bulletPoints: seoBulletPoints,
+        targetAudience: seoAudience,
+        keywords: seoKeywords,
+        productUrl: seoProductUrl
+      });
+
+      setSeoResult(response.data);
+    } catch (err: any) {
+      console.error("Error generating SEO content:", err);
+      alert("Fehler bei der Inhaltsgenerierung: " + err.message);
+    } finally {
+      setSeoLoading(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -820,127 +855,443 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Message Container */}
-        <section className="messages-container">
-          {messages.map((msg) => (
-            <div key={msg.id} className={`message-wrapper ${msg.sender} ${msg.payload ? "has-payload" : ""}`}>
-              <div className="message-meta-header">
-                <span className="sender-name">
-                  {msg.sender === "bot" ? "Susi, deine digitale Assistentin" : "Kunde"}
-                </span>
-              </div>
-              <div className="message-bubble-row">
-                <div className="message-avatar">
-                  {msg.sender === "bot" ? <ChatIcon /> : <UserIcon />}
+        {/* Tab Navigation */}
+        <div className="tab-navigation" style={{
+          display: "flex",
+          gap: "12px",
+          padding: "12px 24px",
+          borderBottom: "1px solid #fbcfe8",
+          backgroundColor: "#ffffff"
+        }}>
+          <button 
+            className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "30px",
+              border: "1.5px solid",
+              borderColor: activeTab === 'chat' ? "var(--brand-secondary)" : "#e2e8f0",
+              backgroundColor: activeTab === 'chat' ? "var(--bg-main)" : "#ffffff",
+              color: activeTab === 'chat' ? "var(--brand-eco)" : "var(--text-secondary)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "13.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              transition: "all 0.2s ease"
+            }}
+          >
+            💬 KI-Kundenservice
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'seo' ? 'active' : ''}`}
+            onClick={() => setActiveTab('seo')}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "30px",
+              border: "1.5px solid",
+              borderColor: activeTab === 'seo' ? "var(--brand-secondary)" : "#e2e8f0",
+              backgroundColor: activeTab === 'seo' ? "var(--bg-main)" : "#ffffff",
+              color: activeTab === 'seo' ? "var(--brand-eco)" : "var(--text-secondary)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "13.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              transition: "all 0.2s ease"
+            }}
+          >
+            ✍️ SEO/GEO Content-Generator
+          </button>
+        </div>
+
+        {/* Tab Content 1: Chat Assistant */}
+        {activeTab === 'chat' && (
+          <>
+            {/* Message Container */}
+            <section className="messages-container">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`message-wrapper ${msg.sender} ${msg.payload ? "has-payload" : ""}`}>
+                  <div className="message-meta-header">
+                    <span className="sender-name">
+                      {msg.sender === "bot" ? "Susi, deine digitale Assistentin" : "Kunde"}
+                    </span>
+                  </div>
+                  <div className="message-bubble-row">
+                    <div className="message-avatar">
+                      {msg.sender === "bot" ? <ChatIcon /> : <UserIcon />}
+                    </div>
+                    {msg.text && (
+                      <div className="message-bubble">
+                        <div className="message-text">
+                          {renderMarkdown(msg.text)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Full Width Custom Payloads */}
+                  {msg.payload && msg.payload.type === "product_comparison" && (
+                    <div className="full-width-payload-container">
+                      {renderProductComparison(msg.payload)}
+                    </div>
+                  )}
+                  {msg.payload && msg.payload.type === "product_detail_carousel" && (
+                    <div className="full-width-payload-container">
+                      {renderProductDetailCarousel(msg.payload)}
+                    </div>
+                  )}
+                  {msg.payload && msg.payload.type === "base_product_detail" && (
+                    <div className="full-width-payload-container">
+                      {renderProductDetail(msg.payload)}
+                    </div>
+                  )}
+                  {msg.payload && hasQuickActions(msg.payload) && (
+                    <div className="full-width-payload-container">
+                      {renderQuickActions(msg.payload, handleSendMessage)}
+                    </div>
+                  )}
+                  <div className="message-meta-footer">
+                    <span className="message-time">
+                      {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
                 </div>
-                {msg.text && (
-                  <div className="message-bubble">
-                    <div className="message-text">
-                      {renderMarkdown(msg.text)}
+              ))}
+
+              {loading && (
+                <div className="message-wrapper bot loading">
+                  <div className="message-meta-header">
+                    <span className="sender-name">Susi, deine digitale Assistentin</span>
+                  </div>
+                  <div className="message-bubble-row">
+                    <div className="message-avatar"><ChatIcon /></div>
+                    <div className="message-bubble">
+                      <div className="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-              
-              {/* Full Width Custom Payloads */}
-              {msg.payload && msg.payload.type === "product_comparison" && (
-                <div className="full-width-payload-container">
-                  {renderProductComparison(msg.payload)}
                 </div>
               )}
-              {msg.payload && msg.payload.type === "product_detail_carousel" && (
-                <div className="full-width-payload-container">
-                  {renderProductDetailCarousel(msg.payload)}
-                </div>
-              )}
-              {msg.payload && msg.payload.type === "base_product_detail" && (
-                <div className="full-width-payload-container">
-                  {renderProductDetail(msg.payload)}
-                </div>
-              )}
-              {msg.payload && hasQuickActions(msg.payload) && (
-                <div className="full-width-payload-container">
-                  {renderQuickActions(msg.payload, handleSendMessage)}
-                </div>
-              )}
-              <div className="message-meta-footer">
-                <span className="message-time">
-                  {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              </div>
-            </div>
-          ))}
 
-          {loading && (
-            <div className="message-wrapper bot loading">
-              <div className="message-meta-header">
-                <span className="sender-name">Susi, deine digitale Assistentin</span>
-              </div>
-              <div className="message-bubble-row">
-                <div className="message-avatar"><ChatIcon /></div>
-                <div className="message-bubble">
-                  <div className="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
+              {error && <div className="error-banner">{error}</div>}
+              <div ref={messagesEndRef} />
+            </section>
+
+            {/* Dynamic suggestions if chat has only the welcome message */}
+            {messages.length <= 1 && !loading && (
+              <div className="suggestions-container">
+                <p className="suggestions-title">Häufig gestellte Fragen:</p>
+                <div className="suggestions-grid">
+                  {SUGGESTIONS.map((suggestion, index) => (
+                    <button
+                      key={index}
+                      className="suggestion-chip"
+                      onClick={() => handleSendMessage(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {error && <div className="error-banner">{error}</div>}
-          <div ref={messagesEndRef} />
-        </section>
-
-        {/* Dynamic suggestions if chat has only the welcome message */}
-        {messages.length <= 1 && !loading && (
-          <div className="suggestions-container">
-            <p className="suggestions-title">Häufig gestellte Fragen:</p>
-            <div className="suggestions-grid">
-              {SUGGESTIONS.map((suggestion, index) => (
+            {/* Chat Input Box */}
+            <footer className="chat-footer-box">
+              <div className="input-row">
+                <div className="input-container">
+                  <input
+                    type="text"
+                    placeholder="Stelle eine Frage zu Geschenken, Tassen, etc..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={loading}
+                    autoFocus
+                  />
+                </div>
                 <button
-                  key={index}
-                  className="suggestion-chip"
-                  onClick={() => handleSendMessage(suggestion)}
+                  className="send-btn"
+                  onClick={() => handleSendMessage(input)}
+                  disabled={!input.trim() || loading}
+                  title="Nachricht senden"
                 >
-                  {suggestion}
+                  Senden
                 </button>
-              ))}
+              </div>
+              <div className="footer-company-info">
+                sheepworld AG • Am Schafhügel 1 • 92289 Ursensollen • Deutschland
+              </div>
+              <p className="disclaimer">
+                Hinweis: Dies ist ein KI-gestützter Assistent. Antworten können Fehler enthalten. Bitte überprüfe wichtige Angaben stets anhand der offiziellen Unterlagen von sheepworld.
+              </p>
+            </footer>
+          </>
+        )}
+
+        {/* Tab Content 2: SEO Content-Generator */}
+        {activeTab === 'seo' && (
+          <div className="seo-generator-container" style={{
+            display: "flex",
+            flexDirection: "row",
+            gap: "24px",
+            padding: "24px",
+            height: "calc(100% - 68px)",
+            overflowY: "auto",
+            flexWrap: "wrap"
+          }}>
+            {/* Left Panel: Input Form */}
+            <div className="seo-form-card" style={{
+              flex: "1 1 340px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              backgroundColor: "#ffffff",
+              padding: "24px",
+              borderRadius: "16px",
+              border: "1.5px solid #fbcfe8",
+              boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+              height: "fit-content",
+              textAlign: "left"
+            }}>
+              <h3 style={{ margin: "0 0 4px 0", color: "var(--brand-secondary)", fontWeight: "800" }}>📝 Text-Kriterien</h3>
+              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-secondary)" }}>Gib hier das Thema und deine Kernaspekte an. Der Generator zieht automatisch Daten aus deiner sheepworld-Datenbank!</p>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Thema / Produkt</label>
+                <input 
+                  type="text" 
+                  placeholder="z. B. Faultier Bettwäsche, Tasse 'Ohne Dich ist alles doof'..." 
+                  value={seoTopic}
+                  onChange={(e) => setSeoTopic(e.target.value)}
+                  disabled={seoLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Kernaspekte / Stichpunkte</label>
+                <textarea 
+                  placeholder="Trage hier wichtige Inhalte ein (z. B. 100% Baumwolle, Geschenkidee zum Geburtstag, schläft 20h am Tag...)" 
+                  value={seoBulletPoints}
+                  onChange={(e) => setSeoBulletPoints(e.target.value)}
+                  disabled={seoLoading}
+                  style={{ padding: "12px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", height: "130px", resize: "none", lineHeight: "1.5" }}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Zielgruppe / Tonalität</label>
+                <select 
+                  value={seoAudience}
+                  onChange={(e) => setSeoAudience(e.target.value)}
+                  disabled={seoLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
+                >
+                  <option value="Endkunden von sheepworld (herzliches Du)">Endkunden von sheepworld (herzliches Du)</option>
+                  <option value="Geschäftskunden / B2B (formelle Sie-Form)">Geschäftskunden / B2B (formelle Sie-Form)</option>
+                  <option value="Liebespaare und Verliebte">Liebespaare und Verliebte</option>
+                  <option value="Mamas, Papas und Eltern">Mamas, Papas und Eltern</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>SEO-Fokus-Keywords</label>
+                <input 
+                  type="text" 
+                  placeholder="z. B. kuschelig, Geschenkidee, Geburtstag (durch Komma trennen)..." 
+                  value={seoKeywords}
+                  onChange={(e) => setSeoKeywords(e.target.value)}
+                  disabled={seoLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Aktuelle Produkt-URL (optional)</label>
+                <input 
+                  type="text" 
+                  placeholder="z. B. https://sheepworld.de/products/bettwaesche-faultier..." 
+                  value={seoProductUrl}
+                  onChange={(e) => setSeoProductUrl(e.target.value)}
+                  disabled={seoLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <button 
+                onClick={handleGenerateSEO}
+                disabled={!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading}
+                style={{
+                  padding: "12px 20px",
+                  backgroundColor: (!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading) ? "#cbd5e1" : "var(--brand-secondary)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  transition: "background-color 0.15s ease",
+                  marginTop: "10px"
+                }}
+              >
+                {seoLoading ? "✨ Generiere SEO/GEO-Inhalte..." : "✨ SEO-Text generieren"}
+              </button>
+            </div>
+
+            {/* Right Panel: Output Panel */}
+            <div className="seo-result-card" style={{
+              flex: "2 1 450px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              height: "100%"
+            }}>
+              {seoResult ? (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                  backgroundColor: "#ffffff",
+                  padding: "24px",
+                  borderRadius: "16px",
+                  border: "1.5px solid #fbcfe8",
+                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+                  textAlign: "left"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h3 style={{ margin: 0, color: "var(--brand-eco)", fontWeight: "800" }}>🚀 Generierter Text</h3>
+                    <button 
+                      onClick={() => {
+                        const fullCopy = `H1-Title: ${seoResult.title}\nMeta-Description: ${seoResult.metaDescription}\n\nContent:\n${seoResult.content}`;
+                        navigator.clipboard.writeText(fullCopy);
+                        alert("Text erfolgreich kopiert! 📋");
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        backgroundColor: "var(--bg-main)",
+                        border: "1px solid var(--border-light)",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "var(--brand-eco)",
+                        cursor: "pointer"
+                      }}
+                    >
+                      📋 Alles kopieren
+                    </button>
+                  </div>
+
+                  {/* Metadata Box */}
+                  <div style={{ backgroundColor: "#f8fafc", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ marginBottom: "12px" }}>
+                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>SEO-Titel (H1)</strong>
+                      <h4 style={{ margin: "4px 0 0 0", color: "var(--text-primary)", fontSize: "15px", fontWeight: "700" }}>{seoResult.title}</h4>
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Meta-Beschreibung (Google-Snippet)</strong>
+                      <p style={{ margin: "4px 0 0 0", color: "var(--text-secondary)", fontSize: "13px", lineHeight: "1.4" }}>{seoResult.metaDescription}</p>
+                    </div>
+                  </div>
+
+                  {/* Main Content Box */}
+                  <div>
+                    <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Optimierter Marketing-Text (Markdown)</strong>
+                    <div style={{
+                      marginTop: "6px",
+                      padding: "16px",
+                      border: "1.5px solid #fbcfe8",
+                      borderRadius: "10px",
+                      maxHeight: "350px",
+                      overflowY: "auto",
+                      backgroundColor: "#fffdfd",
+                      fontSize: "14px",
+                      lineHeight: "1.6"
+                    }}>
+                      {renderMarkdown(seoResult.content)}
+                    </div>
+                  </div>
+
+                  {/* Sources Box */}
+                  {seoResult.sources && seoResult.sources.length > 0 && (
+                    <div>
+                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Fakten-Datenquellen (Grounded)</strong>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "6px" }}>
+                        {seoResult.sources.map((src: any, idx: number) => (
+                          <a 
+                            key={idx} 
+                            href={src.uri} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={{
+                              display: "inline-block",
+                              padding: "4px 10px",
+                              backgroundColor: "var(--bg-main)",
+                              border: "1px solid var(--border-light)",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              color: "var(--brand-eco)",
+                              textDecoration: "none"
+                            }}
+                          >
+                            🔗 {src.title || "Produktseite"}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : seoLoading ? (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  minHeight: "400px",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "16px",
+                  border: "1.5px solid #fbcfe8",
+                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+                  color: "var(--text-secondary)",
+                  padding: "40px",
+                  textAlign: "center"
+                }}>
+                  <div className="auth-spinner" style={{ borderLeftColor: "var(--brand-secondary)" }}></div>
+                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "800" }}>
+                    ✨ sheepworld KI generiert deinen SEO-Text...
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "360px", lineHeight: "1.5" }}>
+                    Bitte habe einen kleinen Moment Geduld. Wir recherchieren im Datenspeicher nach passenden Produktinformationen und verfassen einen suchmaschinen- und GEO-optimierten Text für dich.
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  minHeight: "400px",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "16px",
+                  border: "2px dashed #fbcfe8",
+                  color: "var(--text-secondary)",
+                  padding: "40px"
+                }}>
+                  <span style={{ fontSize: "54px", marginBottom: "16px" }}>✍️</span>
+                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "700" }}>Bereit zum Schreiben</h3>
+                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "340px", textAlign: "center", lineHeight: "1.5" }}>Trage links das Thema und deine Stichpunkte ein, um in Sekunden einen suchmaschinen- und KI-optimierten Text zu erhalten!</p>
+                </div>
+              )}
             </div>
           </div>
         )}
-
-        {/* Chat Input Box */}
-        <footer className="chat-footer-box">
-          <div className="input-row">
-            <div className="input-container">
-              <input
-                type="text"
-                placeholder="Stelle eine Frage zu Geschenken, Tassen, etc..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={loading}
-                autoFocus
-              />
-            </div>
-            <button
-              className="send-btn"
-              onClick={() => handleSendMessage(input)}
-              disabled={!input.trim() || loading}
-              title="Nachricht senden"
-            >
-              Senden
-            </button>
-          </div>
-          <div className="footer-company-info">
-            sheepworld AG • Am Schafhügel 1 • 92289 Ursensollen • Deutschland
-          </div>
-          <p className="disclaimer">
-            Hinweis: Dies ist ein KI-gestützter Assistent. Antworten können Fehler enthalten. Bitte überprüfe wichtige Angaben stets anhand der offiziellen Unterlagen von sheepworld.
-          </p>
-        </footer>
       </main>
     </div>
   );
