@@ -474,7 +474,7 @@ export default function Home() {
   const [latency, setLatency] = useState<number | null>(null);
 
   // New SEO Generator State Variables
-  const [activeTab, setActiveTab] = useState<'chat' | 'seo'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'seo' | 'cards'>('chat');
   const [seoTopic, setSeoTopic] = useState("");
   const [seoBulletPoints, setSeoBulletPoints] = useState("");
   const [seoAudience, setSeoAudience] = useState("Endkunden (freundliches Du)");
@@ -482,6 +482,14 @@ export default function Home() {
   const [seoProductUrl, setSeoProductUrl] = useState("");
   const [seoLoading, setSeoLoading] = useState(false);
   const [seoResult, setSeoResult] = useState<any>(null);
+
+  // Greeting Card Generator State Variables
+  const [cardRecipient, setCardRecipient] = useState("");
+  const [cardOccasion, setCardOccasion] = useState("");
+  const [cardMood, setCardMood] = useState("");
+  const [cardInsider, setCardInsider] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+  const [cardResult, setCardResult] = useState<any>(null);
 
   // Authentication states
   const [user, setUser] = useState<any>(null);
@@ -704,6 +712,30 @@ export default function Home() {
     }
   };
 
+  const handleGenerateCard = async () => {
+    if (!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading) return;
+
+    setCardLoading(true);
+    setCardResult(null);
+
+    try {
+      const generateGreetingCardFn = httpsCallable<any, any>(functions, "generateGreetingCard");
+      const response = await generateGreetingCardFn({
+        empfaenger: cardRecipient,
+        anlass: cardOccasion,
+        stimmung: cardMood,
+        insider: cardInsider
+      });
+
+      setCardResult(response.data);
+    } catch (err: any) {
+      console.error("Error generating greeting card:", err);
+      alert("Fehler bei der Grußkarten-Generierung: " + err.message);
+    } finally {
+      setCardLoading(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -904,6 +936,27 @@ export default function Home() {
             }}
           >
             ✍️ SEO/GEO Content-Generator
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cards')}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "30px",
+              border: "1.5px solid",
+              borderColor: activeTab === 'cards' ? "var(--brand-secondary)" : "#e2e8f0",
+              backgroundColor: activeTab === 'cards' ? "var(--bg-main)" : "#ffffff",
+              color: activeTab === 'cards' ? "var(--brand-eco)" : "var(--text-secondary)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "13.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              transition: "all 0.2s ease"
+            }}
+          >
+            🎁 Grußkarten-Generator
           </button>
         </div>
 
@@ -1287,6 +1340,261 @@ export default function Home() {
                   <span style={{ fontSize: "54px", marginBottom: "16px" }}>✍️</span>
                   <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "700" }}>Bereit zum Schreiben</h3>
                   <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "340px", textAlign: "center", lineHeight: "1.5" }}>Trage links das Thema und deine Stichpunkte ein, um in Sekunden einen suchmaschinen- und KI-optimierten Text zu erhalten!</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab Content 3: Greeting Card Generator */}
+        {activeTab === 'cards' && (
+          <div className="cards-generator-container" style={{
+            display: "flex",
+            flexDirection: "row",
+            gap: "24px",
+            padding: "24px",
+            height: "calc(100% - 68px)",
+            overflowY: "auto",
+            flexWrap: "wrap"
+          }}>
+            {/* Left Panel: Input Criteria Form */}
+            <div className="seo-form-panel" style={{
+              flex: "1 1 350px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              backgroundColor: "#ffffff",
+              padding: "24px",
+              borderRadius: "16px",
+              border: "1.5px solid #fbcfe8",
+              boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+              height: "fit-content",
+              textAlign: "left"
+            }}>
+              <h3 style={{ margin: "0 0 4px 0", color: "var(--brand-secondary)", fontWeight: "800" }}>🎁 Karten-Details</h3>
+              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-secondary)" }}>Gestalte eine einzigartige sheepworld-Grußkarte. Die KI zieht passende Sprüche als Inspiration aus dem Datenspeicher!</p>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Empfänger (z. B. Schatz, Mama, Thomas...)</label>
+                <input 
+                  type="text" 
+                  placeholder="Für wen ist die Karte?" 
+                  value={cardRecipient}
+                  onChange={(e) => setCardRecipient(e.target.value)}
+                  disabled={cardLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Anlass (z. B. Geburtstag, Liebe, Hochzeit, Genesung...)</label>
+                <input 
+                  type="text" 
+                  placeholder="z. B. Geburtstag, Hochzeitstag, Valentinstag..." 
+                  value={cardOccasion}
+                  onChange={(e) => setCardOccasion(e.target.value)}
+                  disabled={cardLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Stimmung / Tonalität</label>
+                <select 
+                  value={cardMood}
+                  onChange={(e) => setCardMood(e.target.value)}
+                  disabled={cardLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
+                >
+                  <option value="">-- Stimmung wählen --</option>
+                  <option value="Süß & Herzerwärmend (typisch Schaf)">Süß & Herzerwärmend (typisch Schaf)</option>
+                  <option value="Lustig & Humorvoll (leicht neckisch)">Lustig & Humorvoll (leicht neckisch)</option>
+                  <option value="Frech & Sarkastisch (ohne Drama)">Frech & Sarkastisch (ohne Drama)</option>
+                  <option value="Tiefgründig & Emotional">Tiefgründig & Emotional</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Insider-Detail / Gemeinsame Erlebnisse (optional)</label>
+                <textarea 
+                  placeholder="z. B. Isst heimlich nachts Nutella, hat immer kalte Füße, liebt Schnarchen..." 
+                  value={cardInsider}
+                  onChange={(e) => setCardInsider(e.target.value)}
+                  disabled={cardLoading}
+                  style={{ padding: "12px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", height: "80px", resize: "none", lineHeight: "1.5" }}
+                />
+              </div>
+
+              <button 
+                onClick={handleGenerateCard}
+                disabled={!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading}
+                style={{
+                  padding: "12px 20px",
+                  backgroundColor: (!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading) ? "#cbd5e1" : "var(--brand-secondary)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  transition: "background-color 0.15s ease",
+                  marginTop: "10px"
+                }}
+              >
+                {cardLoading ? "✨ Generiere Grußkarte..." : "✨ Grußkarte generieren"}
+              </button>
+            </div>
+
+            {/* Right Panel: Output Panel */}
+            <div className="seo-result-card" style={{
+              flex: "2 1 450px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              height: "100%"
+            }}>
+              {cardResult ? (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                  backgroundColor: "#ffffff",
+                  padding: "24px",
+                  borderRadius: "16px",
+                  border: "1.5px solid #fbcfe8",
+                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+                  textAlign: "left"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h3 style={{ margin: 0, color: "var(--brand-eco)", fontWeight: "800" }}>🚀 Generierte Grußkarte</h3>
+                    <button 
+                      onClick={() => {
+                        const fullCopy = `Karten-Vorderseite (Spruch):\n${cardResult.titelSpruch}\n\nKarten-Innenseite:\n${cardResult.innentext}`;
+                        navigator.clipboard.writeText(fullCopy);
+                        alert("Karteninhalt erfolgreich kopiert! 📋");
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        backgroundColor: "var(--bg-main)",
+                        border: "1px solid var(--border-light)",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "var(--brand-eco)",
+                        cursor: "pointer"
+                      }}
+                    >
+                      📋 Alles kopieren
+                    </button>
+                  </div>
+
+                  {/* Card Front Block */}
+                  <div style={{
+                    backgroundColor: "#fffdfd",
+                    padding: "24px",
+                    borderRadius: "16px",
+                    border: "2px solid #fbcfe8",
+                    textAlign: "center",
+                    position: "relative",
+                    boxShadow: "0 4px 10px rgba(251, 207, 232, 0.2)",
+                    overflow: "hidden"
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      top: "10px",
+                      right: "12px",
+                      fontSize: "10px",
+                      fontWeight: "700",
+                      color: "#fbcfe8",
+                      letterSpacing: "1px",
+                      textTransform: "uppercase"
+                    }}>Vorderseite</div>
+                    <span style={{ fontSize: "36px", display: "block", marginBottom: "8px" }}>🐑💖</span>
+                    <h4 style={{ 
+                      margin: "0 auto", 
+                      maxWidth: "340px",
+                      color: "var(--brand-secondary)", 
+                      fontSize: "22px", 
+                      fontWeight: "900",
+                      lineHeight: "1.4",
+                      fontFamily: "inherit"
+                    }}>
+                      "{cardResult.titelSpruch}"
+                    </h4>
+                  </div>
+
+                  {/* Card Inside Block */}
+                  <div style={{
+                    backgroundColor: "#f8fafc",
+                    padding: "24px",
+                    borderRadius: "16px",
+                    border: "1px solid #e2e8f0",
+                    position: "relative"
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      top: "10px",
+                      right: "12px",
+                      fontSize: "10px",
+                      fontWeight: "700",
+                      color: "#cbd5e1",
+                      letterSpacing: "1px",
+                      textTransform: "uppercase"
+                    }}>Innenseite</div>
+                    <strong style={{ display: "block", fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px", marginBottom: "8px" }}>Dein persönlicher Text</strong>
+                    <p style={{ 
+                      margin: 0, 
+                      color: "var(--text-primary)", 
+                      fontSize: "15px", 
+                      lineHeight: "1.6",
+                      fontStyle: "italic",
+                      whiteSpace: "pre-line"
+                    }}>
+                      {cardResult.innentext}
+                    </p>
+                  </div>
+                </div>
+              ) : cardLoading ? (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  minHeight: "400px",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "16px",
+                  border: "1.5px solid #fbcfe8",
+                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
+                  color: "var(--text-secondary)",
+                  padding: "40px",
+                  textAlign: "center"
+                }}>
+                  <div className="auth-spinner" style={{ borderLeftColor: "var(--brand-secondary)" }}></div>
+                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "800" }}>
+                    ✨ sheepworld KI dichtet deinen Spruch...
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "360px", lineHeight: "1.5" }}>
+                    Bitte habe einen Moment Geduld. Wir durchstöbern unseren Datenspeicher nach echten sheepworld-Sprüchen zur Inspiration und entwerfen ein echtes kartenreifes Unikat für dich!
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  minHeight: "400px",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "16px",
+                  border: "2px dashed #fbcfe8",
+                  color: "var(--text-secondary)",
+                  padding: "40px"
+                }}>
+                  <span style={{ fontSize: "54px", marginBottom: "16px" }}>🎁</span>
+                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "700" }}>Bereit zum Dichten</h3>
+                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "340px", textAlign: "center", lineHeight: "1.5" }}>Gib links die Daten deines Empfängers und des Anlasses ein, um in Sekunden ein sheepworld-Grußkartenunikat zu texten!</p>
                 </div>
               )}
             </div>

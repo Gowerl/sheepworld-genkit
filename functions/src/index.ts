@@ -372,3 +372,72 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     throw new HttpsError("internal", `Internal Server Error: ${error.message}`);
   }
 });
+
+// 3. Export the Greeting Card Generator as a Callable Cloud Function
+export const generateGreetingCard = onCall({ region: "europe-west4", cors: true }, async (request) => {
+  try {
+    const { empfaenger, anlass, stimmung, insider } = request.data;
+
+    if (!empfaenger || !anlass || !stimmung) {
+      throw new HttpsError("invalid-argument", "Missing fields: empfaenger, anlass, or stimmung");
+    }
+
+    logger.info(`Starting Genkit Greeting Card generation for recipient: ${empfaenger}, occasion: ${anlass}`);
+
+    // 1. Fetch grounding context/reference phrases from search datastore
+    const searchResults = await searchVertexAISearch(`${anlass} ${stimmung}`);
+    const referenzSprueche = searchResults
+      .map((r, idx) => `Spruch ${idx + 1}: ${r.snippet}`)
+      .join("\n");
+
+    logger.info(`Found ${searchResults.length} grounding/reference documents for the card.`);
+
+    // 2. Build instructions prompt
+    const prompt = `Du bist der offizielle, kreative Kopf hinter den sheepworld-Sprüchen (berühmt für "Ohne Dich ist alles doof" und viele andere süße, humorvolle Motive).
+Deine Aufgabe ist es, eine neue, einzigartige Grußkarte zu verfassen. 
+
+Nutze diese echten Sprüche aus unserem Datenspeicher als Inspiration für den typischen schaf-haften, herzlichen und leicht humorvollen Tonfall:
+${referenzSprueche || "Keine spezifischen Sprüche gefunden. Nutze den typischen süßen, leicht frechen und emotionalen sheepworld-Humor."}
+
+KARTEN-DETAILS:
+- Empfänger: ${empfaenger}
+- Anlass: ${anlass}
+- Stimmung: ${stimmung}
+- Insider-Detail (integriere dies charmant und natürlich, falls vorhanden): ${insider || "Keine"}
+
+Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
+- titelSpruch: Ein kurzer, knackiger Hauptspruch (maximal 10 Wörter) für die Vorderseite der Karte, der typisch sheepworld-artig, süß, herzerwärmend oder leicht frech ist.
+- innentext: Ein persönlicher, herzlicher Text (3-4 Sätze) für die Innenseite der Karte, der den Empfänger direkt anspricht und ein eventuelles Insider-Detail charmant einwebt.`;
+
+    // 3. Lazy-load Genkit dependencies
+    const { z } = await import("genkit");
+    const { vertexAI } = await import("@genkit-ai/google-genai");
+    const ai = await getGenkit();
+
+    // 4. Generate structured content using Gemini 2.5 Flash via Vertex AI plugin
+    const response = await ai.generate({
+      model: vertexAI.model("gemini-2.5-flash"),
+      prompt: prompt,
+      output: {
+        schema: z.object({
+          titelSpruch: z.string(),
+          innentext: z.string()
+        })
+      }
+    });
+
+    const parsedOutput = response.output;
+    if (parsedOutput) {
+      return parsedOutput;
+    } else {
+      logger.error("Failed to generate structured greeting card from Gemini:", response.text);
+      throw new HttpsError("internal", "Failed to generate structured greeting card content");
+    }
+  } catch (error: any) {
+    logger.error("Unhandled error in generateGreetingCard flow:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", `Internal Server Error: ${error.message}`);
+  }
+});
