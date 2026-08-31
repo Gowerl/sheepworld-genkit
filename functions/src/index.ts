@@ -44,7 +44,7 @@ async function getGenkit() {
       plugins: [
         vertexAI({
           projectId: PROJECT_ID,
-          location: "europe-west4" // Match the main region of our GCP resources
+          location: "us-central1" // Flagship region for Gemini and Imagen models
         })
       ]
     });
@@ -487,25 +487,39 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     }
 
     if (motifType === "ai") {
-      logger.info(`Option A: Generating custom KI illustration via Imagen 3 for: ${anlass} (${stimmung})`);
+      logger.info(`Option A: Generating custom KI illustration via Imagen 4 for: ${anlass} (${stimmung})`);
       const imagePrompt = `A simple, hand-drawn vector-style cartoon illustration of a cute, fluffy white sheep in the iconic "sheepworld" art style. The sheep has a chubby round body, thin stick legs, large friendly eyes, and cute pink blushed cheeks. Thick, clean black outlines on a solid flat white background (no shadows, no gradients, no borders). The design represents the theme: "${anlass}" in a "${stimmung}" mood. The style should be sweet, minimalist, and directly reminiscent of "Ohne Dich ist alles doof" greeting cards.`;
 
+      // Try imagen-4.0-generate-001 first (latest whitelisted model in us-central1)
       try {
         const imageResponse = await ai.generate({
-          model: vertexAI.model("imagen-3.0-generate-001"),
+          model: vertexAI.model("imagen-4.0-generate-001"),
           prompt: imagePrompt,
           output: { format: "media" }
         });
 
         if (imageResponse.media?.url) {
           motifUrl = imageResponse.media.url;
-          logger.info("Successfully generated AI image via Imagen 3.");
-        } else {
-          logger.warn("Imagen 3 did not return any media URL.");
+          logger.info("Successfully generated AI image via Imagen-4.0-generate-001.");
         }
       } catch (imgError: any) {
-        logger.error("Error generating image with Imagen 3:", imgError);
-        // Kein Abbruch, wir liefern die Karte halt ohne Motiv zurück falls Imagen fehlschlägt
+        logger.warn("Error with Imagen-4.0-generate-001. Trying Imagen 3 as backup...", imgError.message);
+
+        // Fallback to imagen-3.0-generate-001
+        try {
+          const imageResponse = await ai.generate({
+            model: vertexAI.model("imagen-3.0-generate-001"),
+            prompt: imagePrompt,
+            output: { format: "media" }
+          });
+
+          if (imageResponse.media?.url) {
+            motifUrl = imageResponse.media.url;
+            logger.info("Successfully generated AI image via Imagen-3.0-generate-001.");
+          }
+        } catch (threeError: any) {
+          logger.error("All Imagen models failed.", threeError);
+        }
       }
     }
 
