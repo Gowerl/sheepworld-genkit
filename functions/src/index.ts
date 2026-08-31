@@ -44,7 +44,7 @@ async function getGenkit() {
       plugins: [
         vertexAI({
           projectId: PROJECT_ID,
-          location: "us-central1" // Vertex AI endpoint region (standard)
+          location: "europe-west4" // Match the main region of our GCP resources
         })
       ]
     });
@@ -96,24 +96,48 @@ async function searchVertexAISearch(query: string): Promise<SearchResult[]> {
     const tokenResponse = await client.getAccessToken();
     const token = tokenResponse.token;
 
-    const url = `https://eu-discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/eu/collections/default_collection/engines/sheepworld-enterprise_1787738222029/servingConfigs/default_search:search`;
-    
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "x-goog-user-project": PROJECT_ID,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        query: query,
-        pageSize: 4 // Fetch top 4 documents for grounding
-      })
-    });
+    const combinations = [
+      { loc: "eu", endpoint: "eu-discoveryengine.googleapis.com", engine: "sheepworld-enterprise_1787738222029" },
+      { loc: "us", endpoint: "us-discoveryengine.googleapis.com", engine: "sheepworld-enterprise_1787738222029" },
+      { loc: "global", endpoint: "discoveryengine.googleapis.com", engine: "sheepworld-enterprise_1787738222029" },
+      { loc: "eu", endpoint: "eu-discoveryengine.googleapis.com", engine: "datastorage-sheepworld-de_1787649919596" },
+      { loc: "us", endpoint: "us-discoveryengine.googleapis.com", engine: "datastorage-sheepworld-de_1787649919596" },
+      { loc: "global", endpoint: "discoveryengine.googleapis.com", engine: "datastorage-sheepworld-de_1787649919596" }
+    ];
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error(`Discovery Engine returned status ${response.status}: ${errorText}`);
+    let response: any = null;
+    for (const comb of combinations) {
+      const url = `https://${comb.endpoint}/v1/projects/${PROJECT_ID}/locations/${comb.loc}/collections/default_collection/engines/${comb.engine}/servingConfigs/default_search:search`;
+      logger.info(`Trying Discovery Engine query at ${comb.loc} for engine ${comb.engine}...`);
+      
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "x-goog-user-project": PROJECT_ID,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            query: query,
+            pageSize: 4
+          })
+        });
+
+        if (res.ok) {
+          response = res;
+          logger.info(`Successfully fetched results from engine ${comb.engine} in region ${comb.loc}!`);
+          break;
+        } else {
+          logger.warn(`Endpoint failed with status ${res.status} for engine ${comb.engine} in region ${comb.loc}.`);
+        }
+      } catch (err) {
+        logger.error(`Fetch error on endpoint ${url}:`, err);
+      }
+    }
+
+    if (!response) {
+      logger.error("All search Discovery Engine endpoints failed.");
       return [];
     }
 
@@ -468,7 +492,7 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
       try {
         const imageResponse = await ai.generate({
-          model: vertexAI.model("imagen-3.0-generate-002"),
+          model: vertexAI.model("imagen-3.0-generate-001"),
           prompt: imagePrompt,
           output: { format: "media" }
         });
@@ -483,6 +507,12 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
         logger.error("Error generating image with Imagen 3:", imgError);
         // Kein Abbruch, wir liefern die Karte halt ohne Motiv zurück falls Imagen fehlschlägt
       }
+    }
+
+    // 6. Finaler defensiver Premium-Fallback auf das offizielle, hochauflösende Sheepworld-Logo, falls alle Stricke reißen
+    if (!motifUrl) {
+      logger.info("Both search and AI generation failed. Using official Sheepworld Logo SVG as premium fallback.");
+      motifUrl = "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
     }
 
     return {
