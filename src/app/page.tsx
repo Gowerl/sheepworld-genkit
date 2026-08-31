@@ -488,6 +488,7 @@ export default function Home() {
   const [cardOccasion, setCardOccasion] = useState("");
   const [cardMood, setCardMood] = useState("");
   const [cardInsider, setCardInsider] = useState("");
+  const [cardMotifType, setCardMotifType] = useState<"official" | "ai">("official");
   const [cardLoading, setCardLoading] = useState(false);
   const [cardResult, setCardResult] = useState<any>(null);
 
@@ -724,7 +725,8 @@ export default function Home() {
         empfaenger: cardRecipient,
         anlass: cardOccasion,
         stimmung: cardMood,
-        insider: cardInsider
+        insider: cardInsider,
+        motifType: cardMotifType
       });
 
       setCardResult(response.data);
@@ -1425,6 +1427,19 @@ export default function Home() {
                 />
               </div>
 
+              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Motiv-Stil für die Vorderseite</label>
+                <select 
+                  value={cardMotifType}
+                  onChange={(e) => setCardMotifType(e.target.value as any)}
+                  disabled={cardLoading}
+                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
+                >
+                  <option value="official">Offizielles shop-Produktbild (RAG-Matching)</option>
+                  <option value="ai">Individuelles KI-generiertes Unikat (Imagen 3)</option>
+                </select>
+              </div>
+
               <button 
                 onClick={handleGenerateCard}
                 disabled={!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading}
@@ -1509,7 +1524,20 @@ export default function Home() {
                       letterSpacing: "1px",
                       textTransform: "uppercase"
                     }}>Vorderseite</div>
-                    <span style={{ fontSize: "36px", display: "block", marginBottom: "8px" }}>🐑💖</span>
+                    
+                    {/* Render Motif if returned! */}
+                    {cardResult.motifUrl ? (
+                      <div style={{ margin: "16px auto 16px auto", maxWidth: "200px", borderRadius: "12px", overflow: "hidden", border: "1px solid #fbcfe8", backgroundColor: "#ffffff" }}>
+                        <img 
+                          src={cardResult.motifUrl} 
+                          alt="Karten-Motiv" 
+                          style={{ width: "100%", height: "auto", display: "block" }} 
+                        />
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: "36px", display: "block", marginBottom: "8px" }}>🐑💖</span>
+                    )}
+
                     <h4 style={{ 
                       margin: "0 auto", 
                       maxWidth: "340px",
@@ -1521,6 +1549,29 @@ export default function Home() {
                     }}>
                       "{cardResult.titelSpruch}"
                     </h4>
+
+                    {/* Show Shop Referral for Option B (Official) */}
+                    {cardResult.shopUrl && (
+                      <div style={{ 
+                        marginTop: "16px", 
+                        padding: "10px", 
+                        backgroundColor: "var(--bg-main)", 
+                        borderRadius: "8px", 
+                        fontSize: "12.5px", 
+                        border: "1.5px dashed var(--brand-secondary)",
+                        textAlign: "center"
+                      }}>
+                        🎁 <strong>Passendes sheepworld-Produkt im Shop:</strong><br/>
+                        <a 
+                          href={cardResult.shopUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          style={{ color: "var(--brand-secondary)", fontWeight: "700", textDecoration: "underline", display: "inline-block", marginTop: "4px" }}
+                        >
+                          {cardResult.shopTitle || "Produkt ansehen"} ➔
+                        </a>
+                      </div>
+                    )}
                   </div>
 
                   {/* Card Inside Block */}

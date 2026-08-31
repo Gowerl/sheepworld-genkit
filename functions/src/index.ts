@@ -376,13 +376,14 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 // 3. Export the Greeting Card Generator as a Callable Cloud Function
 export const generateGreetingCard = onCall({ region: "europe-west4", cors: true }, async (request) => {
   try {
-    const { empfaenger, anlass, stimmung, insider } = request.data;
+    const { empfaenger, anlass, stimmung, insider, motifType: initialMotifType } = request.data;
+    let motifType = initialMotifType || "official";
 
     if (!empfaenger || !anlass || !stimmung) {
       throw new HttpsError("invalid-argument", "Missing fields: empfaenger, anlass, or stimmung");
     }
 
-    logger.info(`Starting Genkit Greeting Card generation for recipient: ${empfaenger}, occasion: ${anlass}`);
+    logger.info(`Starting Genkit Greeting Card generation. Recipient: ${empfaenger}, Occasion: ${anlass}, MotifType: ${motifType}`);
 
     // 1. Fetch grounding context/reference phrases from search datastore
     const searchResults = await searchVertexAISearch(`${anlass} ${stimmung}`);
@@ -392,7 +393,7 @@ export const generateGreetingCard = onCall({ region: "europe-west4", cors: true 
 
     logger.info(`Found ${searchResults.length} grounding/reference documents for the card.`);
 
-    // 2. Build instructions prompt
+    // 2. Build instructions prompt for the text dichten
     const prompt = `Du bist der offizielle, kreative Kopf hinter den sheepworld-Sprüchen (berühmt für "Ohne Dich ist alles doof" und viele andere süße, humorvolle Motive).
 Deine Aufgabe ist es, eine neue, einzigartige Grußkarte zu verfassen. 
 
@@ -414,8 +415,8 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     const { vertexAI } = await import("@genkit-ai/google-genai");
     const ai = await getGenkit();
 
-    // 4. Generate structured content using Gemini 2.5 Flash via Vertex AI plugin
-    const response = await ai.generate({
+    // 4. Generate structured text content using Gemini 2.5 Flash
+    const textResponse = await ai.generate({
       model: vertexAI.model("gemini-2.5-flash"),
       prompt: prompt,
       output: {
@@ -426,13 +427,73 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
       }
     });
 
-    const parsedOutput = response.output;
-    if (parsedOutput) {
-      return parsedOutput;
-    } else {
-      logger.error("Failed to generate structured greeting card from Gemini:", response.text);
-      throw new HttpsError("internal", "Failed to generate structured greeting card content");
+    const parsedOutput = textResponse.output;
+    if (!parsedOutput) {
+      logger.error("Failed to generate structured greeting card text from Gemini:", textResponse.text);
+      throw new HttpsError("internal", "Failed to generate structured greeting card text");
     }
+
+    // 5. Handlung für Motiv-Einbindung (Option A: AI-Bilderzeugung oder Option B: RAG-Shopbild)
+    let motifUrl: string | null = null;
+    let shopUrl: string | null = null;
+    let shopTitle: string | null = null;
+
+    if (motifType === "official") {
+      logger.info(`Option B: Searching for official shop product image matching: ${anlass} ${stimmung}`);
+      if (searchResults && searchResults.length > 0) {
+        for (const res of searchResults) {
+          if (res.uri) {
+            const img = await extractOgImage(res.uri);
+            if (img) {
+              motifUrl = img;
+              shopUrl = res.uri;
+              shopTitle = res.title;
+              logger.info(`Successfully found official shop product image: ${img} for "${res.title}"`);
+              break;
+            }
+          }
+        }
+      }
+
+      // Falls kein echtes Bild gefunden wurde, weichen wir automatisch auf KI-Bilderzeugung aus, um ein Motiv zu garantieren!
+      if (!motifUrl) {
+        logger.info("No official product image found in search. Falling back to AI image generation (Imagen 3).");
+        motifType = "ai";
+      }
+    }
+
+    if (motifType === "ai") {
+      logger.info(`Option A: Generating custom KI illustration via Imagen 3 for: ${anlass} (${stimmung})`);
+      const imagePrompt = `A simple, hand-drawn vector-style cartoon illustration of a cute, fluffy white sheep in the iconic "sheepworld" art style. The sheep has a chubby round body, thin stick legs, large friendly eyes, and cute pink blushed cheeks. Thick, clean black outlines on a solid flat white background (no shadows, no gradients, no borders). The design represents the theme: "${anlass}" in a "${stimmung}" mood. The style should be sweet, minimalist, and directly reminiscent of "Ohne Dich ist alles doof" greeting cards.`;
+
+      try {
+        const imageResponse = await ai.generate({
+          model: vertexAI.model("imagen-3.0-generate-002"),
+          prompt: imagePrompt,
+          output: { format: "media" }
+        });
+
+        if (imageResponse.media?.url) {
+          motifUrl = imageResponse.media.url;
+          logger.info("Successfully generated AI image via Imagen 3.");
+        } else {
+          logger.warn("Imagen 3 did not return any media URL.");
+        }
+      } catch (imgError: any) {
+        logger.error("Error generating image with Imagen 3:", imgError);
+        // Kein Abbruch, wir liefern die Karte halt ohne Motiv zurück falls Imagen fehlschlägt
+      }
+    }
+
+    return {
+      titelSpruch: parsedOutput.titelSpruch,
+      innentext: parsedOutput.innentext,
+      motifUrl: motifUrl,
+      shopUrl: shopUrl,
+      shopTitle: shopTitle,
+      motifTypeUsed: motifType
+    };
+
   } catch (error: any) {
     logger.error("Unhandled error in generateGreetingCard flow:", error);
     if (error instanceof HttpsError) {
