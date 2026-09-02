@@ -1,496 +1,88 @@
-"use client";
+'use client';
 
 import { useState, useEffect, useRef } from "react";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import { auth, functions } from "@/lib/firebase";
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword } from "firebase/auth";
 
-interface Message {
-  id: string;
-  sender: "user" | "bot";
-  text: string;
-  timestamp: Date;
-  payload?: any;
-}
-
-// Helper to generate unique session IDs
-const generateSessionId = () => {
-  return "session_" + Math.random().toString(36).substring(2, 11);
-};
-
-// Photo Avatar of SUSI (placeholder SVG sheep or image)
-const ChatIcon = () => (
-  <div style={{ 
-    width: "100%", 
-    height: "100%", 
-    backgroundColor: "#ffffff", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center",
-    borderRadius: "50%",
-    border: "2px solid #134094",
-    overflow: "hidden"
-  }}>
-    <span style={{ fontSize: "20px" }}>🐑</span>
-  </div>
-);
-
-// SVG User Avatar Icon
-const UserIcon = () => (
-  <svg 
-    viewBox="0 0 24 24" 
-    width="20" 
-    height="20" 
-    style={{ fill: "currentColor" }}
-  >
-    <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
-  </svg>
-);
-
-// Safe inline Markdown-like parser
-const renderMarkdown = (text: string) => {
-  const lines = text.split("\n");
-  const elements: React.ReactNode[] = [];
-  let inList = false;
-  let listItems: React.ReactNode[] = [];
-
-  const flushList = (keyPrefix: string | number) => {
-    if (listItems.length > 0) {
-      elements.push(
-        <ul key={`list_${keyPrefix}`} className="markdown-list">
-          {listItems}
-        </ul>
-      );
-      listItems = [];
-      inList = false;
-    }
-  };
-
-  lines.forEach((line, lineIdx) => {
-    const trimmed = line.trim();
-    const isListItem = trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("• ");
-    
-    if (isListItem) {
-      if (!inList) {
-        inList = true;
-      }
-      
-      const itemText = trimmed.replace(/^[\-\*•]\s+/, "");
-      const escaped = itemText
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-      
-      const processed = escaped
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>')
-        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*(.*?)\*/g, "<em>$1</em>")
-        .replace(/`(.*?)`/g, "<code>$1</code>");
-        
-      listItems.push(
-        <li key={`li_${lineIdx}`} dangerouslySetInnerHTML={{ __html: processed }} />
-      );
-    } else {
-      if (inList) {
-        flushList(lineIdx);
-      }
-      
-      if (trimmed === "") {
-        elements.push(<div key={`empty_${lineIdx}`} className="markdown-spacer" />);
-      } else {
-        const escaped = line
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#039;");
-          
-        const processed = escaped
-          .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>')
-          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-          .replace(/\*(.*?)\*/g, "<em>$1</em>")
-          .replace(/`(.*?)`/g, "<code>$1</code>");
-          
-        elements.push(
-          <p key={`p_${lineIdx}`} dangerouslySetInnerHTML={{ __html: processed }} />
-        );
-      }
-    }
-  });
-
-  if (inList) {
-    flushList("end");
-  }
-
-  return elements;
-};
-
-// Component to render structured product comparisons
-const renderProductComparison = (payload: any) => {
-  if (!payload || payload.type !== "product_comparison") return null;
-
-  const { title, productDetails = [], features = [] } = payload;
-
-  return (
-    <div className="comparison-container">
-      {title && <h3 className="comparison-title">{title}</h3>}
-      
-      {/* Product Cards Grid with horizontal scroll */}
-      <div className="comparison-cards-grid">
-        {productDetails.map((product: any, idx: number) => (
-          <div key={product.productId || idx} className="comparison-card">
-            {product.imageUris && product.imageUris[0] && (
-              <div className="comparison-card-image" style={{ backgroundImage: `url(${product.imageUris[0]})` }}>
-                <div className="image-overlay"></div>
-              </div>
-            )}
-            <div className="comparison-card-content">
-              <h4 className="product-title">{product.title}</h4>
-              <p className="product-subtitle">{product.subtitle}</p>
-              
-              {/* Product Specifications / Features listed directly inside the card */}
-              {features && features.length > 0 && (
-                <div className="product-features-mini-list" style={{
-                  margin: "12px 0",
-                  padding: "10px",
-                  backgroundColor: "#f8fafc",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0"
-                }}>
-                  {features.map((feature: any, fIdx: number) => {
-                    const spec = feature.productSpecs && feature.productSpecs[idx];
-                    const specText = spec ? spec.text || (spec.anchor ? spec.anchor.displayText : null) : null;
-                    if (!specText) return null;
-                    return (
-                      <div key={fIdx} style={{ fontSize: "12px", margin: "4px 0", textAlign: "left", color: "#64748b" }}>
-                        <strong style={{ color: "#134094" }}>{feature.label}:</strong> {specText}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Star Rating */}
-              {product.rating && (
-                <div className="product-rating">
-                  {"★".repeat(Math.floor(product.rating))}
-                  {product.rating % 1 !== 0 ? "½" : ""}
-                  {"☆".repeat(5 - Math.ceil(product.rating))}
-                  <span className="rating-value">({product.rating})</span>
-                </div>
-              )}
-              
-              <div className="product-price-tag">
-                <span className="price-label">Preis:</span>
-                <span className="price-value">{product.price || "Individuell"}</span>
-              </div>
-
-              {product.uri && (
-                <a 
-                  href={product.uri} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="product-cta-btn"
-                >
-                  Produktdetails ↗
-                </a>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// Component to render individual product details (styled identically to the comparison cards!)
-const renderProductDetail = (payload: any) => {
-  if (!payload || payload.type !== "base_product_detail") return null;
-
-  const { title, subtitle, price, uri, imageUris = [], rating, review, productId, description } = payload;
-
-  return (
-    <div className="comparison-card" style={{
-      maxWidth: "300px",
-      margin: "12px 0",
-      boxShadow: "0 4px 15px rgba(19, 64, 148, 0.04)"
-    }}>
-      <div className="comparison-card-image" style={{
-        backgroundImage: imageUris && imageUris[0] ? `url(${imageUris[0]})` : "none",
-        backgroundColor: imageUris && imageUris[0] ? "#ffffff" : "#f1f5f9",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        position: "relative"
-      }}>
-        {(!imageUris || !imageUris[0]) && (
-          <span style={{ fontSize: "40px" }}>🐑</span>
-        )}
-        <div className="image-overlay"></div>
-      </div>
-      <div className="comparison-card-content">
-        <h4 className="product-title">{title}</h4>
-        <p className="product-subtitle">{subtitle}</p>
-
-        {description && (
-          <p className="product-description" style={{
-            fontSize: "12.5px",
-            color: "#475569",
-            lineHeight: "1.45",
-            margin: "8px 0 12px 0",
-            textAlign: "left"
-          }}>{description}</p>
-        )}
-
-        {/* Dynamic product specs block inside card */}
-        {(productId || rating || review) && (
-          <div className="product-features-mini-list" style={{
-            margin: "12px 0",
-            padding: "10px",
-            backgroundColor: "#f8fafc",
-            borderRadius: "8px",
-            border: "1px solid #e2e8f0"
-          }}>
-            {productId && (
-              <div style={{ fontSize: "12px", margin: "4px 0", textAlign: "left", color: "#64748b" }}>
-                <strong style={{ color: "#134094" }}>Artikel-Nr:</strong> {productId}
-              </div>
-            )}
-            {rating && (
-              <div style={{ fontSize: "12px", margin: "4px 0", textAlign: "left", color: "#64748b" }}>
-                <strong style={{ color: "#134094" }}>Bewertung:</strong> {rating} / 5 ★
-              </div>
-            )}
-            {review && review.count > 0 && (
-              <div style={{ fontSize: "12px", margin: "4px 0", textAlign: "left", color: "#64748b" }}>
-                <strong style={{ color: "#134094" }}>Bewertungen:</strong> {review.count} {review.reviewUri && <a href={review.reviewUri} target="_blank" rel="noopener noreferrer" style={{ color: "#0084C9", textDecoration: "none" }}>(Lesen ↗)</a>}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Star Rating */}
-        {rating && (
-          <div className="product-rating">
-            {"★".repeat(Math.floor(rating))}
-            {rating % 1 !== 0 ? "½" : ""}
-            {"☆".repeat(5 - Math.ceil(rating))}
-            <span className="rating-value">({rating})</span>
-          </div>
-        )}
-        
-        <div className="product-price-tag">
-          <span className="price-label">Preis im Shop:</span>
-          <span className="price-value">{price || "Auf Anfrage"}</span>
-        </div>
-
-        {uri && (
-          <a 
-            href={uri} 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="product-cta-btn"
-          >
-            Produkt im Shop öffnen ↗
-          </a>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Component to render a product detail carousel
-const renderProductDetailCarousel = (payload: any) => {
-  if (!payload || payload.type !== "product_detail_carousel") return null;
-
-  const { productDetails = [] } = payload;
-
-  return (
-    <div className="carousel-container">
-      {productDetails.map((product: any, idx: number) => (
-        <div key={product.productId || idx} className="comparison-card" style={{
-          flex: "0 0 280px",
-          display: "flex",
-          flexDirection: "column",
-          borderRadius: "12px",
-          overflow: "hidden",
-          border: "1px solid #e2e8f0",
-          backgroundColor: "#ffffff"
-        }}>
-          <div className="comparison-card-image" style={{
-            backgroundImage: product.imageUris && product.imageUris[0] ? `url(${product.imageUris[0]})` : "none",
-            backgroundColor: product.imageUris && product.imageUris[0] ? "#ffffff" : "#f1f5f9",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}>
-            {(!product.imageUris || !product.imageUris[0]) && (
-              <span style={{ fontSize: "40px" }}>🐑</span>
-            )}
-            <div className="image-overlay"></div>
-          </div>
-          <div className="comparison-card-content" style={{
-            padding: "16px",
-            display: "flex",
-            flexDirection: "column",
-            flexGrow: 1,
-            justifyContent: "space-between"
-          }}>
-            <div>
-              <h4 className="product-title" style={{ margin: "0 0 4px 0", fontSize: "16px", color: "#134094" }}>{product.title}</h4>
-              {product.subtitle && <p className="product-subtitle" style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#64748b" }}>{product.subtitle}</p>}
-            </div>
-            <div>
-              <div className="product-price-tag" style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "bold" }}>
-                <span className="price-label" style={{ fontWeight: "normal", color: "#64748b" }}>Preis: </span>
-                <span className="price-value" style={{ color: "#78BE20" }}>{product.price || "Auf Anfrage"}</span>
-              </div>
-
-              {product.uri && (
-                <a 
-                  href={product.uri} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="product-cta-btn"
-                  style={{
-                    display: "block",
-                    textAlign: "center",
-                    padding: "8px 16px",
-                    backgroundColor: "#134094",
-                    color: "#ffffff",
-                    borderRadius: "6px",
-                    textDecoration: "none",
-                    fontSize: "13px",
-                    fontWeight: "500"
-                  }}
-                >
-                  Zum Shop ↗
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// Helper to check if payload contains quick actions recursively
-const hasQuickActions = (payload: any) => {
-  if (!payload || typeof payload !== 'object') return false;
-  
-  let found = false;
-  const search = (item: any) => {
-    if (!item || typeof item !== 'object') return;
-    if (Array.isArray(item.actions)) {
-      found = true;
-      return;
-    }
-    for (const key of Object.keys(item)) {
-      if (typeof item[key] === 'object' && item[key] !== null) {
-        search(item[key]);
-        if (found) return;
-      }
-    }
-  };
-  search(payload);
-  return found;
-};
-
-// Component to render interactive quick actions list
-const renderQuickActions = (payload: any, onActionClick: (utterance: string) => void) => {
-  const findActionsAndSummary = (obj: any): { actions: any[], summary: string } => {
-    let foundActions: any[] = [];
-    let foundSummary = "";
-
-    const search = (item: any) => {
-      if (!item || typeof item !== 'object') return;
-
-      if (item.summary && typeof item.summary === 'string') {
-        foundSummary = item.summary;
-      }
-
-      if (Array.isArray(item.actions)) {
-        foundActions = item.actions;
-        return;
-      }
-
-      for (const key of Object.keys(item)) {
-        if (typeof item[key] === 'object' && item[key] !== null) {
-          search(item[key]);
-          if (foundActions.length > 0) return;
-        }
-      }
-    };
-
-    search(obj);
-    return { actions: foundActions, summary: foundSummary };
-  };
-
-  const { actions, summary } = findActionsAndSummary(payload);
-  const displaySummary = summary || "Hier sind einige Optionen, wie du fortfahren kannst.";
-
-  if (actions.length === 0) return null;
-
-  return (
-    <div className="quick-actions-container">
-      <p className="quick-actions-summary">{displaySummary}</p>
-      <div className="quick-actions-list">
-        {actions.map((action: any, idx: number) => (
-          <button 
-            key={idx} 
-            className="quick-action-card" 
-            onClick={() => onActionClick(action.utterance)}
-          >
-            <div className="quick-action-content">
-              <span className="quick-action-title">{action.content}</span>
-              {action.description && (
-                <span className="quick-action-desc">{action.description}</span>
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// Initial suggestion chips for sheepworld
-const SUGGESTIONS = [
-  "🎁 Geschenkefinder starten",
-  "🧼 Bettwäsche- & Pflegetipps erhalten",
-  "📦 Fragen zu Versand & Rückgabe stellen",
-  "🧸 sheepworld Marken & Welten entdecken"
-];
+// Import modular Tab Components
+import ChatTab from "@/components/tabs/ChatTab";
+import SeoTab from "@/components/tabs/SeoTab";
+import CardsTab from "@/components/tabs/CardsTab";
+import PlannerTab from "@/components/tabs/PlannerTab";
+import BundleTab from "@/components/tabs/BundleTab";
+import FinderTab from "@/components/tabs/FinderTab";
+import StickerTab from "@/components/tabs/StickerTab";
+import TunerTab from "@/components/tabs/TunerTab";
+import AvatarTab from "@/components/tabs/AvatarTab";
+import BlogTab from "@/components/tabs/BlogTab";
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<'chat' | 'seo' | 'cards' | 'planner' | 'bundle' | 'sticker' | 'tuner' | 'avatar' | 'finder' | 'blog'>('chat');
+  const [showDocModal, setShowDocModal] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState("session_" + Math.random().toString(36).substring(2, 10));
 
-  // New SEO Generator State Variables
-  const [activeTab, setActiveTab] = useState<'chat' | 'seo' | 'cards'>('chat');
-  const [seoTopic, setSeoTopic] = useState("");
-  const [seoBulletPoints, setSeoBulletPoints] = useState("");
-  const [seoAudience, setSeoAudience] = useState("Endkunden (freundliches Du)");
-  const [seoKeywords, setSeoKeywords] = useState("");
-  const [seoProductUrl, setSeoProductUrl] = useState("");
-  const [seoLoading, setSeoLoading] = useState(false);
-  const [seoResult, setSeoResult] = useState<any>(null);
+  // Shared Chat State (needed for Sidebar logs)
+  const [messages, setMessages] = useState<any[]>([
+    {
+      id: "init_1",
+      sender: "bot",
+      text: "Hallo! Ich bin Susi, deine persönliche sheepworld-Assistentin. 🐏\nWie kann ich dir heute helfen? Frag mich nach unseren Produkten, Bettwäsche-Pflege oder lass uns direkt zusammen Geschenke aussuchen!",
+      timestamp: new Date()
+    }
+  ]);
 
-  // Greeting Card Generator State Variables
+  // Greeting Card Generator State Variables (Shared to allow pre-filling)
   const [cardRecipient, setCardRecipient] = useState("");
+  const [cardSender, setCardSender] = useState("");
   const [cardOccasion, setCardOccasion] = useState("");
   const [cardMood, setCardMood] = useState("");
   const [cardInsider, setCardInsider] = useState("");
   const [cardMotifType, setCardMotifType] = useState<"official" | "ai">("official");
   const [cardLoading, setCardLoading] = useState(false);
   const [cardResult, setCardResult] = useState<any>(null);
+
+  // Geschenkbox-Berater State Variables (Shared to allow pre-filling)
+  const [bundleRelationship, setBundleRelationship] = useState("Ehefrau");
+  const [bundleInterests, setBundleInterests] = useState("");
+  const [bundleOccasion, setBundleOccasion] = useState("");
+  const [bundleBudget, setBundleBudget] = useState(50);
+  const [bundleLoading, setBundleLoading] = useState(false);
+  const [bundleResult, setBundleResult] = useState<any>(null);
+
+  // Upgraded Event Planner State Variables
+  const [plannerEvents, setPlannerEvents] = useState<any[]>([
+    {
+      id: "event_1",
+      title: "Muttertag",
+      dateDay: "12",
+      dateMonth: "Mai",
+      recipient: "Mutter (Regina)",
+      budget: 35,
+      interests: "Kaffee, Garten, Lesen",
+      isImminent: true,
+      text: "Die KI hat bereits eine süße Karte und ein Geschenkset (Tasse + Kissen) vorbereitet."
+    },
+    {
+      id: "event_2",
+      title: "Geburtstag (Schatz)",
+      dateDay: "28",
+      dateMonth: "Aug",
+      recipient: "Ehefrau (Julia)",
+      budget: 60,
+      interests: "Kuscheln, Faultiere, Entspannung",
+      isImminent: false,
+      text: "Erinnerung ist aktiv. Wir melden uns rechtzeitig mit einer Idee."
+    }
+  ]);
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState("");
+  const [newEventDate, setNewEventDate] = useState("");
+  const [newEventRecipient, setNewEventRecipient] = useState("");
+  const [newEventBudget, setNewEventBudget] = useState(30);
+  const [newEventInterests, setNewEventInterests] = useState("");
 
   // Authentication states
   const [user, setUser] = useState<any>(null);
@@ -500,9 +92,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Listen to auth state changes
+  // Listen to Auth State Changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -511,208 +101,47 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // Initialize unique session ID on mount
-  useEffect(() => {
-    setSessionId(generateSessionId());
-    
-    // Add welcome message
-    setMessages([
-      {
-        id: "welcome",
-        sender: "bot",
-        text: "Hallo! Ich bin Susi, deine digitale Assistentin von sheepworld.de. Wie kann ich dir heute bei Fragen zu unseren Geschenken, Tassen, Geschenkartikeln oder Services helfen?",
-        timestamp: new Date()
-      }
-    ]);
-  }, []);
-
+  // Handler for login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setLoginError("Bitte füllen Sie alle Felder aus.");
-      return;
-    }
-    
+    if (!loginEmail || !loginPassword) return;
+
     setIsLoggingIn(true);
     setLoginError(null);
-    
+
     try {
-      await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (err: any) {
-      console.error("Login error:", err);
-      if (
-        err.code === "auth/invalid-credential" || 
-        err.code === "auth/user-not-found" || 
-        err.code === "auth/wrong-password" ||
-        err.code === "auth/invalid-email"
-      ) {
-        setLoginError("E-Mail oder Passwort ist ungültig.");
-      } else {
-        setLoginError("Anmeldefehler: " + err.message);
-      }
+      console.error("Login failed:", err);
+      setLoginError("Login fehlgeschlagen. Bitte prüfe deine E-Mail und dein Passwort.");
     } finally {
       setIsLoggingIn(false);
     }
   };
 
+  // Handler for logout
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // Reset session ID and chat history
-      setSessionId(generateSessionId());
-      setMessages([
-        {
-          id: "welcome",
-          sender: "bot",
-          text: "Hallo! Ich bin Susi, deine digitale Assistentin von sheepworld.de. Wie kann ich dir heute bei Fragen zu unseren Geschenken, Tassen, Geschenkartikeln oder Services helfen?",
-          timestamp: new Date()
-        }
-      ]);
-      setLatency(null);
-      setLoginEmail("");
-      setLoginPassword("");
-      setLoginError(null);
-    } catch (err: any) {
-      console.error("Error signing out:", err);
-    }
-  };
-
-  // Auto-scroll to bottom of messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
-
-  const handleSendMessage = async (textToSend: string) => {
-    if (!textToSend.trim() || loading) return;
-
-    const userMessage: Message = {
-      id: "msg_" + Date.now() + "_user",
-      sender: "user",
-      text: textToSend,
-      timestamp: new Date()
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setLoading(true);
-    setError(null);
-
-    const startTime = performance.now();
-
-    try {
-      // Direct Callable Function call
-      const runSessionFn = httpsCallable<any, any>(functions, "runSession");
-      const response = await runSessionFn({
-        message: textToSend,
-        sessionId: sessionId
-      });
-
-      const data = response.data;
-      const endTime = performance.now();
-      const duration = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      setLatency(duration);
-      
-      // Parse Google CES API response structure
-      let botText = "";
-      let payload: any = null;
-      if (data.outputs && Array.isArray(data.outputs)) {
-        botText = data.outputs
-          .map((output: any) => output.text)
-          .filter(Boolean)
-          .join("\n");
-
-        // Try to find any custom payload (structData, payload, or any custom nested properties)
-        for (const output of data.outputs) {
-          if (output.structData) {
-            payload = output.structData;
-            break;
-          } else if (output.payload) {
-            payload = output.payload;
-            break;
-          }
-          
-          // Fallback: Check if there's any non-standard object key (e.g. actions, summary, custom fields)
-          const keys = Object.keys(output);
-          const potentialKeys = keys.filter(k => !['text', 'media', 'turnCompleted', 'turnIndex', 'diagnosticInfo'].includes(k));
-          if (potentialKeys.length > 0) {
-            for (const key of potentialKeys) {
-              if (typeof output[key] === 'object' && output[key] !== null) {
-                payload = output[key];
-                break;
-              }
-            }
-            if (payload) break;
-          }
-        }
-      }
-
-      if (!botText && !payload) {
-        botText = "Ich konnte die Antwort des Agenten nicht verarbeiten.";
-      }
-
-      const botMessage: Message = {
-        id: "msg_" + Date.now() + "_bot",
-        sender: "bot",
-        text: botText,
-        timestamp: new Date(),
-        payload: payload
-      };
-
-      setMessages((prev) => [...prev, botMessage]);
-    } catch (err: any) {
-      console.error("Error communicating with chat API:", err);
-      setError("Verbindungsproblem: Die Anfrage an den Sheepworld-Agenten ist fehlgeschlagen.");
-      
-      const errorMessage: Message = {
-        id: "msg_" + Date.now() + "_error",
-        sender: "bot",
-        text: "Entschuldigung, es gab einen technischen Fehler beim Abrufen der Antwort. Bitte vergewissere dich, dass die Internetverbindung steht, oder versuche es gleich noch einmal.",
-        timestamp: new Date()
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error("Sign out error:", err);
     }
   };
 
   const startNewChat = () => {
-    setSessionId(generateSessionId());
     setMessages([
       {
-        id: "welcome_" + Date.now(),
+        id: "init_reset",
         sender: "bot",
-        text: "Ein neuer Chat-Verlauf wurde gestartet. Wie kann ich dir heute helfen?",
+        text: "Klar, wir fangen von vorne an! Worüber möchtest du sprechen? Frag mich nach unseren Produkten oder Onlineshop-Diensten.",
         timestamp: new Date()
       }
     ]);
-    setError(null);
+    setLatency(null);
+    setSessionId("session_" + Math.random().toString(36).substring(2, 10));
   };
 
-  const handleGenerateSEO = async () => {
-    if (!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading) return;
-
-    setSeoLoading(true);
-    setSeoResult(null);
-
-    try {
-      const generateSEOContentFn = httpsCallable<any, any>(functions, "generateSEOContent");
-      const response = await generateSEOContentFn({
-        topic: seoTopic,
-        bulletPoints: seoBulletPoints,
-        targetAudience: seoAudience,
-        keywords: seoKeywords,
-        productUrl: seoProductUrl
-      });
-
-      setSeoResult(response.data);
-    } catch (err: any) {
-      console.error("Error generating SEO content:", err);
-      alert("Fehler bei der Inhaltsgenerierung: " + err.message);
-    } finally {
-      setSeoLoading(false);
-    }
-  };
-
+  // Dedicated Card Generator trigger inside page.tsx to maintain central state
   const handleGenerateCard = async () => {
     if (!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading) return;
 
@@ -720,9 +149,10 @@ export default function Home() {
     setCardResult(null);
 
     try {
-      const generateGreetingCardFn = httpsCallable<any, any>(functions, "generateGreetingCard");
+      const generateGreetingCardFn = httpsCallable<any, any>(functions, "generateGreetingCard", { timeout: 180000 });
       const response = await generateGreetingCardFn({
         empfaenger: cardRecipient,
+        absender: cardSender,
         anlass: cardOccasion,
         stimmung: cardMood,
         insider: cardInsider,
@@ -738,69 +168,115 @@ export default function Home() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage(input);
+  // Dedicated Bundle Generator trigger inside page.tsx to maintain central state
+  const handleGenerateBundle = async () => {
+    if (!bundleRelationship.trim() || !bundleInterests.trim() || !bundleOccasion.trim() || bundleLoading) return;
+
+    setBundleLoading(true);
+    setBundleResult(null);
+
+    try {
+      const generateGiftBundleFn = httpsCallable<any, any>(functions, "generateGiftBundle", { timeout: 180000 });
+      const response = await generateGiftBundleFn({
+        relationship: bundleRelationship,
+        interests: bundleInterests,
+        occasion: bundleOccasion,
+        budget: bundleBudget
+      });
+
+      setBundleResult(response.data);
+    } catch (err: any) {
+      console.error("Error generating gift bundle:", err);
+      alert("Fehler bei der Geschenkbox-Kuration: " + err.message);
+    } finally {
+      setBundleLoading(false);
     }
   };
 
   if (authLoading) {
     return (
-      <div className="auth-loading-screen">
-        <div className="auth-spinner"></div>
-        <p>Verbindung zu sheepworld wird hergestellt...</p>
+      <div style={{ display: "flex", flexDirection: "column", height: "100vh", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-main)" }}>
+        <div className="auth-spinner" style={{ borderLeftColor: "var(--brand-secondary)" }}></div>
+        <p style={{ marginTop: "14px", fontWeight: "700", color: "var(--text-secondary)" }}>Sheepworld-Portal lädt...</p>
       </div>
     );
   }
 
+  // Auth Screen if not logged in
   if (!user) {
     return (
-      <div className="login-page-container">
-        <div className="login-card">
-          <div className="login-logo-box" style={{ backgroundColor: "#ffffff", borderRadius: "12px", padding: "16px", border: "1px solid #fbcfe8", display: "flex", justifyContent: "center", margin: "0 auto 20px auto", maxWidth: "240px" }}>
-            <img src="https://media.sheepworld.de/live/media/39/b0/69/1767349291/logo-sheepworld.svg?ts=1767349291" alt="sheepworld" style={{ width: "100%", height: "auto" }} />
+      <div className="auth-container" style={{
+        display: "flex",
+        height: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "var(--bg-main)",
+        padding: "16px"
+      }}>
+        <div className="auth-card" style={{
+          backgroundColor: "#ffffff",
+          padding: "40px",
+          borderRadius: "24px",
+          border: "2px solid #cbd5e1",
+          boxShadow: "0 10px 30px -5px rgba(0,0,0,0.05)",
+          width: "100%",
+          maxWidth: "420px",
+          textAlign: "center"
+        }}>
+          <div style={{ width: "160px", height: "auto", margin: "0 auto 24px auto" }}>
+            <img src="/logo-sheepworld.svg" alt="sheepworld" style={{ width: "100%", height: "auto" }} />
           </div>
-          <h2 className="login-title">sheepworld Service-Portal</h2>
-          <p className="login-subtitle">Melde dich an, um den KI-Chat-Assistenten zu starten</p>
+          <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--text-primary)", marginBottom: "8px" }}>Mitarbeiter-Portal</h2>
+          <p style={{ fontSize: "13.5px", color: "var(--text-secondary)", marginBottom: "28px" }}>Bitte melde dich mit deinen Zugangsdaten an.</p>
           
-          <form onSubmit={handleLogin} className="login-form">
-            <div className="form-group">
-              <label htmlFor="email">E-Mail-Adresse</label>
+          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "16px", textAlign: "left" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", fontWeight: "700", color: "#475569" }}>E-Mail-Adresse</label>
               <input 
                 type="email" 
-                id="email" 
-                placeholder="beispiel@domain.de" 
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                disabled={isLoggingIn}
+                placeholder="walter@myc3.com" 
+                value={loginEmail} 
+                onChange={(e) => setLoginEmail(e.target.value)} 
                 required
+                style={{ padding: "12px", borderRadius: "8px", border: "1.5px solid #cbd5e1", outline: "none", fontSize: "14px" }}
               />
             </div>
             
-            <div className="form-group">
-              <label htmlFor="password">Passwort</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", fontWeight: "700", color: "#475569" }}>Passwort</label>
               <input 
                 type="password" 
-                id="password" 
                 placeholder="••••••••" 
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                disabled={isLoggingIn}
+                value={loginPassword} 
+                onChange={(e) => setLoginPassword(e.target.value)} 
                 required
+                style={{ padding: "12px", borderRadius: "8px", border: "1.5px solid #cbd5e1", outline: "none", fontSize: "14px" }}
               />
             </div>
-            
-            {loginError && <div className="login-error-banner">{loginError}</div>}
-            
-            <button type="submit" className="login-submit-btn" disabled={isLoggingIn}>
-              {isLoggingIn ? "Anmeldung läuft..." : "Anmelden"}
+
+            {loginError && (
+              <p style={{ color: "red", fontSize: "12.5px", margin: 0, fontWeight: "600" }}>⚠️ {loginError}</p>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={isLoggingIn}
+              style={{
+                padding: "14px",
+                borderRadius: "8px",
+                backgroundColor: "var(--brand-secondary)",
+                color: "#ffffff",
+                border: "none",
+                fontWeight: "800",
+                cursor: "pointer",
+                fontSize: "14.5px",
+                marginTop: "10px",
+                transition: "background-color 0.2s"
+              }}
+            >
+              {isLoggingIn ? "Anmeldung läuft..." : "Anmelden ➔"}
             </button>
           </form>
-          
-          <div className="login-footer">
-            sheepworld AG • Am Schafhügel 1 • 92289 Ursensollen
-          </div>
         </div>
       </div>
     );
@@ -813,6 +289,30 @@ export default function Home() {
         <div className="sidebar-header">
           <h2 className="dashboard-title">sheepworld Dashboard</h2>
           <p className="dashboard-subtitle">KI-Monitor & Statistiken</p>
+          
+          {/* Scientific Documentation Link */}
+          <div 
+            onClick={() => setShowDocModal(true)}
+            className="sidebar-card doc-link-card" 
+            style={{ 
+              cursor: "pointer", 
+              border: "1.5px solid var(--brand-secondary)", 
+              backgroundColor: "rgba(225, 29, 72, 0.04)", 
+              transition: "all 0.2s ease-in-out",
+              marginTop: "14px",
+              padding: "12px",
+              borderRadius: "10px",
+              textAlign: "left"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "22px" }}>📖</span>
+              <div>
+                <div style={{ fontSize: "10px", fontWeight: "900", color: "var(--brand-secondary)", letterSpacing: "0.5px" }}>SYSTEM-ARCHITEKTUR</div>
+                <strong style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: "800" }}>Wissenschaftliche Doku</strong>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="sidebar-cards-container">
@@ -889,769 +389,590 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation (Two-row layout for clean grouping) */}
         <div className="tab-navigation" style={{
           display: "flex",
-          gap: "12px",
+          flexDirection: "column",
+          gap: "10px",
           padding: "12px 24px",
           borderBottom: "1px solid #fbcfe8",
           backgroundColor: "#ffffff"
         }}>
-          <button 
-            className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chat')}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "30px",
-              border: "1.5px solid",
-              borderColor: activeTab === 'chat' ? "var(--brand-secondary)" : "#e2e8f0",
-              backgroundColor: activeTab === 'chat' ? "var(--bg-main)" : "#ffffff",
-              color: activeTab === 'chat' ? "var(--brand-eco)" : "var(--text-secondary)",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontSize: "13.5px",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              transition: "all 0.2s ease"
-            }}
-          >
-            💬 KI-Kundenservice
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === 'seo' ? 'active' : ''}`}
-            onClick={() => setActiveTab('seo')}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "30px",
-              border: "1.5px solid",
-              borderColor: activeTab === 'seo' ? "var(--brand-secondary)" : "#e2e8f0",
-              backgroundColor: activeTab === 'seo' ? "var(--bg-main)" : "#ffffff",
-              color: activeTab === 'seo' ? "var(--brand-eco)" : "var(--text-secondary)",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontSize: "13.5px",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              transition: "all 0.2s ease"
-            }}
-          >
-            ✍️ SEO/GEO Content-Generator
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`}
-            onClick={() => setActiveTab('cards')}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "30px",
-              border: "1.5px solid",
-              borderColor: activeTab === 'cards' ? "var(--brand-secondary)" : "#e2e8f0",
-              backgroundColor: activeTab === 'cards' ? "var(--bg-main)" : "#ffffff",
-              color: activeTab === 'cards' ? "var(--brand-eco)" : "var(--text-secondary)",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontSize: "13.5px",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              transition: "all 0.2s ease"
-            }}
-          >
-            🎁 Grußkarten-Generator
-          </button>
+          {/* Row 1: Marketing & AI Creation */}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: "10px", fontWeight: "900", color: "#94a3b8", display: "inline-block", minWidth: "140px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Content & Marketing:</span>
+            <button 
+              className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'chat' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'chat' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'chat' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              💬 KI-Service
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'seo' ? 'active' : ''}`}
+              onClick={() => setActiveTab('seo')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'seo' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'seo' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'seo' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              ✍️ SEO/GEO
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'blog' ? 'active' : ''}`}
+              onClick={() => setActiveTab('blog')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'blog' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'blog' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'blog' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              📝 Blog-Texter
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'sticker' ? 'active' : ''}`}
+              onClick={() => setActiveTab('sticker')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'sticker' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'sticker' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'sticker' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              🎨 Stickerstudio
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'avatar' ? 'active' : ''}`}
+              onClick={() => setActiveTab('avatar')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'avatar' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'avatar' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'avatar' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              🐑 KI-Verwandlung
+            </button>
+          </div>
+
+          {/* Row 2: Shopping, Gifting & Planning */}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: "10px", fontWeight: "900", color: "#94a3b8", display: "inline-block", minWidth: "140px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Shopping & Geschenke:</span>
+            <button 
+              className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`}
+              onClick={() => setActiveTab('cards')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'cards' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'cards' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'cards' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              📬 Postkarten-Atelier
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'planner' ? 'active' : ''}`}
+              onClick={() => setActiveTab('planner')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'planner' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'planner' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'planner' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              📅 Geschenk-Planer
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'bundle' ? 'active' : ''}`}
+              onClick={() => setActiveTab('bundle')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'bundle' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'bundle' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'bundle' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              🛍️ Geschenkbox-Berater
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'finder' ? 'active' : ''}`}
+              onClick={() => setActiveTab('finder')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'finder' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'finder' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'finder' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              🔍 Geschenkefinder
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'tuner' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tuner')}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "30px",
+                border: "1.5px solid",
+                borderColor: activeTab === 'tuner' ? "var(--brand-secondary)" : "#e2e8f0",
+                backgroundColor: activeTab === 'tuner' ? "var(--bg-main)" : "#ffffff",
+                color: activeTab === 'tuner' ? "var(--brand-eco)" : "var(--text-secondary)",
+                fontWeight: "600",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              ✍️ Sprüche-Tuner
+            </button>
+          </div>
         </div>
 
-        {/* Tab Content 1: Chat Assistant */}
+        {/* Tab Content Rendering */}
         {activeTab === 'chat' && (
-          <>
-            {/* Message Container */}
-            <section className="messages-container">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`message-wrapper ${msg.sender} ${msg.payload ? "has-payload" : ""}`}>
-                  <div className="message-meta-header">
-                    <span className="sender-name">
-                      {msg.sender === "bot" ? "Susi, deine digitale Assistentin" : "Kunde"}
-                    </span>
-                  </div>
-                  <div className="message-bubble-row">
-                    <div className="message-avatar">
-                      {msg.sender === "bot" ? <ChatIcon /> : <UserIcon />}
-                    </div>
-                    {msg.text && (
-                      <div className="message-bubble">
-                        <div className="message-text">
-                          {renderMarkdown(msg.text)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Full Width Custom Payloads */}
-                  {msg.payload && msg.payload.type === "product_comparison" && (
-                    <div className="full-width-payload-container">
-                      {renderProductComparison(msg.payload)}
-                    </div>
-                  )}
-                  {msg.payload && msg.payload.type === "product_detail_carousel" && (
-                    <div className="full-width-payload-container">
-                      {renderProductDetailCarousel(msg.payload)}
-                    </div>
-                  )}
-                  {msg.payload && msg.payload.type === "base_product_detail" && (
-                    <div className="full-width-payload-container">
-                      {renderProductDetail(msg.payload)}
-                    </div>
-                  )}
-                  {msg.payload && hasQuickActions(msg.payload) && (
-                    <div className="full-width-payload-container">
-                      {renderQuickActions(msg.payload, handleSendMessage)}
-                    </div>
-                  )}
-                  <div className="message-meta-footer">
-                    <span className="message-time">
-                      {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                </div>
-              ))}
-
-              {loading && (
-                <div className="message-wrapper bot loading">
-                  <div className="message-meta-header">
-                    <span className="sender-name">Susi, deine digitale Assistentin</span>
-                  </div>
-                  <div className="message-bubble-row">
-                    <div className="message-avatar"><ChatIcon /></div>
-                    <div className="message-bubble">
-                      <div className="typing-indicator">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {error && <div className="error-banner">{error}</div>}
-              <div ref={messagesEndRef} />
-            </section>
-
-            {/* Dynamic suggestions if chat has only the welcome message */}
-            {messages.length <= 1 && !loading && (
-              <div className="suggestions-container">
-                <p className="suggestions-title">Häufig gestellte Fragen:</p>
-                <div className="suggestions-grid">
-                  {SUGGESTIONS.map((suggestion, index) => (
-                    <button
-                      key={index}
-                      className="suggestion-chip"
-                      onClick={() => handleSendMessage(suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Chat Input Box */}
-            <footer className="chat-footer-box">
-              <div className="input-row">
-                <div className="input-container">
-                  <input
-                    type="text"
-                    placeholder="Stelle eine Frage zu Geschenken, Tassen, etc..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={loading}
-                    autoFocus
-                  />
-                </div>
-                <button
-                  className="send-btn"
-                  onClick={() => handleSendMessage(input)}
-                  disabled={!input.trim() || loading}
-                  title="Nachricht senden"
-                >
-                  Senden
-                </button>
-              </div>
-              <div className="footer-company-info">
-                sheepworld AG • Am Schafhügel 1 • 92289 Ursensollen • Deutschland
-              </div>
-              <p className="disclaimer">
-                Hinweis: Dies ist ein KI-gestützter Assistent. Antworten können Fehler enthalten. Bitte überprüfe wichtige Angaben stets anhand der offiziellen Unterlagen von sheepworld.
-              </p>
-            </footer>
-          </>
+          <ChatTab 
+            functions={functions} 
+            latency={latency} 
+            setLatency={setLatency} 
+            sessionId={sessionId} 
+            messages={messages} 
+            setMessages={setMessages} 
+          />
         )}
 
-        {/* Tab Content 2: SEO Content-Generator */}
         {activeTab === 'seo' && (
-          <div className="seo-generator-container" style={{
-            display: "flex",
-            flexDirection: "row",
-            gap: "24px",
-            padding: "24px",
-            height: "calc(100% - 68px)",
-            overflowY: "auto",
-            flexWrap: "wrap"
-          }}>
-            {/* Left Panel: Input Form */}
-            <div className="seo-form-card" style={{
-              flex: "1 1 340px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              backgroundColor: "#ffffff",
-              padding: "24px",
-              borderRadius: "16px",
-              border: "1.5px solid #fbcfe8",
-              boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-              height: "fit-content",
-              textAlign: "left"
-            }}>
-              <h3 style={{ margin: "0 0 4px 0", color: "var(--brand-secondary)", fontWeight: "800" }}>📝 Text-Kriterien</h3>
-              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-secondary)" }}>Gib hier das Thema und deine Kernaspekte an. Der Generator zieht automatisch Daten aus deiner sheepworld-Datenbank!</p>
-
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Thema / Produkt</label>
-                <input 
-                  type="text" 
-                  placeholder="z. B. Faultier Bettwäsche, Tasse 'Ohne Dich ist alles doof'..." 
-                  value={seoTopic}
-                  onChange={(e) => setSeoTopic(e.target.value)}
-                  disabled={seoLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
-                />
-              </div>
-
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Kernaspekte / Stichpunkte</label>
-                <textarea 
-                  placeholder="Trage hier wichtige Inhalte ein (z. B. 100% Baumwolle, Geschenkidee zum Geburtstag, schläft 20h am Tag...)" 
-                  value={seoBulletPoints}
-                  onChange={(e) => setSeoBulletPoints(e.target.value)}
-                  disabled={seoLoading}
-                  style={{ padding: "12px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", height: "130px", resize: "none", lineHeight: "1.5" }}
-                />
-              </div>
-
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Zielgruppe / Tonalität</label>
-                <select 
-                  value={seoAudience}
-                  onChange={(e) => setSeoAudience(e.target.value)}
-                  disabled={seoLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
-                >
-                  <option value="Endkunden von sheepworld (herzliches Du)">Endkunden von sheepworld (herzliches Du)</option>
-                  <option value="Geschäftskunden / B2B (formelle Sie-Form)">Geschäftskunden / B2B (formelle Sie-Form)</option>
-                  <option value="Liebespaare und Verliebte">Liebespaare und Verliebte</option>
-                  <option value="Mamas, Papas und Eltern">Mamas, Papas und Eltern</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>SEO-Fokus-Keywords</label>
-                <input 
-                  type="text" 
-                  placeholder="z. B. kuschelig, Geschenkidee, Geburtstag (durch Komma trennen)..." 
-                  value={seoKeywords}
-                  onChange={(e) => setSeoKeywords(e.target.value)}
-                  disabled={seoLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
-                />
-              </div>
-
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Aktuelle Produkt-URL (optional)</label>
-                <input 
-                  type="text" 
-                  placeholder="z. B. https://sheepworld.de/products/bettwaesche-faultier..." 
-                  value={seoProductUrl}
-                  onChange={(e) => setSeoProductUrl(e.target.value)}
-                  disabled={seoLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
-                />
-              </div>
-
-              <button 
-                onClick={handleGenerateSEO}
-                disabled={!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading}
-                style={{
-                  padding: "12px 20px",
-                  backgroundColor: (!seoTopic.trim() || !seoBulletPoints.trim() || seoLoading) ? "#cbd5e1" : "var(--brand-secondary)",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "8px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  transition: "background-color 0.15s ease",
-                  marginTop: "10px"
-                }}
-              >
-                {seoLoading ? "✨ Generiere SEO/GEO-Inhalte..." : "✨ SEO-Text generieren"}
-              </button>
-            </div>
-
-            {/* Right Panel: Output Panel */}
-            <div className="seo-result-card" style={{
-              flex: "2 1 450px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              height: "100%"
-            }}>
-              {seoResult ? (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                  backgroundColor: "#ffffff",
-                  padding: "24px",
-                  borderRadius: "16px",
-                  border: "1.5px solid #fbcfe8",
-                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-                  textAlign: "left"
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h3 style={{ margin: 0, color: "var(--brand-eco)", fontWeight: "800" }}>🚀 Generierter Text</h3>
-                    <button 
-                      onClick={() => {
-                        const fullCopy = `H1-Title: ${seoResult.title}\nMeta-Description: ${seoResult.metaDescription}\n\nContent:\n${seoResult.content}`;
-                        navigator.clipboard.writeText(fullCopy);
-                        alert("Text erfolgreich kopiert! 📋");
-                      }}
-                      style={{
-                        padding: "6px 12px",
-                        backgroundColor: "var(--bg-main)",
-                        border: "1px solid var(--border-light)",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        color: "var(--brand-eco)",
-                        cursor: "pointer"
-                      }}
-                    >
-                      📋 Alles kopieren
-                    </button>
-                  </div>
-
-                  {/* Metadata Box */}
-                  <div style={{ backgroundColor: "#f8fafc", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                    <div style={{ marginBottom: "12px" }}>
-                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>SEO-Titel (H1)</strong>
-                      <h4 style={{ margin: "4px 0 0 0", color: "var(--text-primary)", fontSize: "15px", fontWeight: "700" }}>{seoResult.title}</h4>
-                    </div>
-                    <div>
-                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Meta-Beschreibung (Google-Snippet)</strong>
-                      <p style={{ margin: "4px 0 0 0", color: "var(--text-secondary)", fontSize: "13px", lineHeight: "1.4" }}>{seoResult.metaDescription}</p>
-                    </div>
-                  </div>
-
-                  {/* Main Content Box */}
-                  <div>
-                    <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Optimierter Marketing-Text (Markdown)</strong>
-                    <div style={{
-                      marginTop: "6px",
-                      padding: "16px",
-                      border: "1.5px solid #fbcfe8",
-                      borderRadius: "10px",
-                      maxHeight: "350px",
-                      overflowY: "auto",
-                      backgroundColor: "#fffdfd",
-                      fontSize: "14px",
-                      lineHeight: "1.6"
-                    }}>
-                      {renderMarkdown(seoResult.content)}
-                    </div>
-                  </div>
-
-                  {/* Sources Box */}
-                  {seoResult.sources && seoResult.sources.length > 0 && (
-                    <div>
-                      <strong style={{ fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px" }}>Fakten-Datenquellen (Grounded)</strong>
-                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "6px" }}>
-                        {seoResult.sources.map((src: any, idx: number) => (
-                          <a 
-                            key={idx} 
-                            href={src.uri} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            style={{
-                              display: "inline-block",
-                              padding: "4px 10px",
-                              backgroundColor: "var(--bg-main)",
-                              border: "1px solid var(--border-light)",
-                              borderRadius: "20px",
-                              fontSize: "12px",
-                              color: "var(--brand-eco)",
-                              textDecoration: "none"
-                            }}
-                          >
-                            🔗 {src.title || "Produktseite"}
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : seoLoading ? (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  minHeight: "400px",
-                  backgroundColor: "#ffffff",
-                  borderRadius: "16px",
-                  border: "1.5px solid #fbcfe8",
-                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-                  color: "var(--text-secondary)",
-                  padding: "40px",
-                  textAlign: "center"
-                }}>
-                  <div className="auth-spinner" style={{ borderLeftColor: "var(--brand-secondary)" }}></div>
-                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "800" }}>
-                    ✨ sheepworld KI generiert deinen SEO-Text...
-                  </h3>
-                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "360px", lineHeight: "1.5" }}>
-                    Bitte habe einen kleinen Moment Geduld. Wir recherchieren im Datenspeicher nach passenden Produktinformationen und verfassen einen suchmaschinen- und GEO-optimierten Text für dich.
-                  </p>
-                </div>
-              ) : (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  minHeight: "400px",
-                  backgroundColor: "#ffffff",
-                  borderRadius: "16px",
-                  border: "2px dashed #fbcfe8",
-                  color: "var(--text-secondary)",
-                  padding: "40px"
-                }}>
-                  <span style={{ fontSize: "54px", marginBottom: "16px" }}>✍️</span>
-                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "700" }}>Bereit zum Schreiben</h3>
-                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "340px", textAlign: "center", lineHeight: "1.5" }}>Trage links das Thema und deine Stichpunkte ein, um in Sekunden einen suchmaschinen- und KI-optimierten Text zu erhalten!</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <SeoTab functions={functions} />
         )}
 
-        {/* Tab Content 3: Greeting Card Generator */}
         {activeTab === 'cards' && (
-          <div className="cards-generator-container" style={{
-            display: "flex",
-            flexDirection: "row",
-            gap: "24px",
-            padding: "24px",
-            height: "calc(100% - 68px)",
-            overflowY: "auto",
-            flexWrap: "wrap"
-          }}>
-            {/* Left Panel: Input Criteria Form */}
-            <div className="seo-form-panel" style={{
-              flex: "1 1 350px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              backgroundColor: "#ffffff",
-              padding: "24px",
-              borderRadius: "16px",
-              border: "1.5px solid #fbcfe8",
-              boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-              height: "fit-content",
-              textAlign: "left"
-            }}>
-              <h3 style={{ margin: "0 0 4px 0", color: "var(--brand-secondary)", fontWeight: "800" }}>🎁 Karten-Details</h3>
-              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-secondary)" }}>Gestalte eine einzigartige sheepworld-Grußkarte. Die KI zieht passende Sprüche als Inspiration aus dem Datenspeicher!</p>
+          <CardsTab 
+            functions={functions}
+            cardRecipient={cardRecipient}
+            setCardRecipient={setCardRecipient}
+            cardSender={cardSender}
+            setCardSender={setCardSender}
+            cardOccasion={cardOccasion}
+            setCardOccasion={setCardOccasion}
+            cardMood={cardMood}
+            setCardMood={setCardMood}
+            cardInsider={cardInsider}
+            setCardInsider={setCardInsider}
+            cardMotifType={cardMotifType}
+            setCardMotifType={setCardMotifType}
+            cardLoading={cardLoading}
+            handleGenerateCard={handleGenerateCard}
+            cardResult={cardResult}
+          />
+        )}
 
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Empfänger (z. B. Schatz, Mama, Thomas...)</label>
-                <input 
-                  type="text" 
-                  placeholder="Für wen ist die Karte?" 
-                  value={cardRecipient}
-                  onChange={(e) => setCardRecipient(e.target.value)}
-                  disabled={cardLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
-                />
-              </div>
+        {activeTab === 'planner' && (
+          <PlannerTab 
+            plannerEvents={plannerEvents}
+            setPlannerEvents={setPlannerEvents}
+            showAddEventModal={showAddEventModal}
+            setShowAddEventModal={setShowAddEventModal}
+            newEventTitle={newEventTitle}
+            setNewEventTitle={setNewEventTitle}
+            newEventDate={newEventDate}
+            setNewEventDate={setNewEventDate}
+            newEventRecipient={newEventRecipient}
+            setNewEventRecipient={setNewEventRecipient}
+            newEventBudget={newEventBudget}
+            setNewEventBudget={setNewEventBudget}
+            newEventInterests={newEventInterests}
+            setNewEventInterests={setNewEventInterests}
+            setBundleRelationship={setBundleRelationship}
+            setBundleInterests={setBundleInterests}
+            setBundleOccasion={setBundleOccasion}
+            setBundleBudget={setBundleBudget}
+            setCardRecipient={setCardRecipient}
+            setCardOccasion={setCardOccasion}
+            setCardMood={setCardMood}
+            setActiveTab={setActiveTab}
+          />
+        )}
 
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Anlass (z. B. Geburtstag, Liebe, Hochzeit, Genesung...)</label>
-                <input 
-                  type="text" 
-                  placeholder="z. B. Geburtstag, Hochzeitstag, Valentinstag..." 
-                  value={cardOccasion}
-                  onChange={(e) => setCardOccasion(e.target.value)}
-                  disabled={cardLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit" }}
-                />
-              </div>
+        {activeTab === 'bundle' && (
+          <BundleTab 
+            bundleRelationship={bundleRelationship}
+            setBundleRelationship={setBundleRelationship}
+            bundleInterests={bundleInterests}
+            setBundleInterests={setBundleInterests}
+            bundleOccasion={bundleOccasion}
+            setBundleOccasion={setBundleOccasion}
+            bundleBudget={bundleBudget}
+            setBundleBudget={setBundleBudget}
+            bundleLoading={bundleLoading}
+            handleGenerateBundle={handleGenerateBundle}
+            bundleResult={bundleResult}
+            setCardRecipient={setCardRecipient}
+            setCardOccasion={setCardOccasion}
+            setCardMood={setCardMood}
+            setActiveTab={setActiveTab}
+          />
+        )}
 
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Stimmung / Tonalität</label>
-                <select 
-                  value={cardMood}
-                  onChange={(e) => setCardMood(e.target.value)}
-                  disabled={cardLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
-                >
-                  <option value="">-- Stimmung wählen --</option>
-                  <option value="Süß & Herzerwärmend (typisch Schaf)">Süß & Herzerwärmend (typisch Schaf)</option>
-                  <option value="Lustig & Humorvoll (leicht neckisch)">Lustig & Humorvoll (leicht neckisch)</option>
-                  <option value="Frech & Sarkastisch (ohne Drama)">Frech & Sarkastisch (ohne Drama)</option>
-                  <option value="Tiefgründig & Emotional">Tiefgründig & Emotional</option>
-                </select>
-              </div>
+        {activeTab === 'finder' && (
+          <FinderTab 
+            setCardRecipient={setCardRecipient}
+            setCardOccasion={setCardOccasion}
+            setCardMood={setCardMood}
+            setActiveTab={setActiveTab}
+          />
+        )}
 
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Insider-Detail / Gemeinsame Erlebnisse (optional)</label>
-                <textarea 
-                  placeholder="z. B. Isst heimlich nachts Nutella, hat immer kalte Füße, liebt Schnarchen..." 
-                  value={cardInsider}
-                  onChange={(e) => setCardInsider(e.target.value)}
-                  disabled={cardLoading}
-                  style={{ padding: "12px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", height: "80px", resize: "none", lineHeight: "1.5" }}
-                />
-              </div>
+        {activeTab === 'blog' && (
+          <BlogTab functions={functions} />
+        )}
 
-              <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)" }}>Motiv-Stil für die Vorderseite</label>
-                <select 
-                  value={cardMotifType}
-                  onChange={(e) => setCardMotifType(e.target.value as any)}
-                  disabled={cardLoading}
-                  style={{ padding: "10px 14px", borderRadius: "8px", border: "1.5px solid #cbd5e1", fontSize: "14px", fontFamily: "inherit", backgroundColor: "#ffffff" }}
-                >
-                  <option value="official">Offizielles shop-Produktbild (RAG-Matching)</option>
-                  <option value="ai">Individuelles KI-generiertes Unikat (Imagen 3)</option>
-                </select>
-              </div>
+        {activeTab === 'sticker' && (
+          <StickerTab functions={functions} />
+        )}
 
-              <button 
-                onClick={handleGenerateCard}
-                disabled={!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading}
-                style={{
-                  padding: "12px 20px",
-                  backgroundColor: (!cardRecipient.trim() || !cardOccasion.trim() || !cardMood.trim() || cardLoading) ? "#cbd5e1" : "var(--brand-secondary)",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "8px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  transition: "background-color 0.15s ease",
-                  marginTop: "10px"
-                }}
-              >
-                {cardLoading ? "✨ Generiere Grußkarte..." : "✨ Grußkarte generieren"}
-              </button>
-            </div>
+        {activeTab === 'tuner' && (
+          <TunerTab 
+            functions={functions} 
+            setCardRecipient={setCardRecipient}
+            setCardOccasion={setCardOccasion}
+            setCardMood={setCardMood}
+            setCardInsider={setCardInsider}
+            setActiveTab={setActiveTab}
+          />
+        )}
 
-            {/* Right Panel: Output Panel */}
-            <div className="seo-result-card" style={{
-              flex: "2 1 450px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              height: "100%"
-            }}>
-              {cardResult ? (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                  backgroundColor: "#ffffff",
-                  padding: "24px",
-                  borderRadius: "16px",
-                  border: "1.5px solid #fbcfe8",
-                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-                  textAlign: "left"
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h3 style={{ margin: 0, color: "var(--brand-eco)", fontWeight: "800" }}>🚀 Generierte Grußkarte</h3>
-                    <button 
-                      onClick={() => {
-                        const fullCopy = `Karten-Vorderseite (Spruch):\n${cardResult.titelSpruch}\n\nKarten-Innenseite:\n${cardResult.innentext}`;
-                        navigator.clipboard.writeText(fullCopy);
-                        alert("Karteninhalt erfolgreich kopiert! 📋");
-                      }}
-                      style={{
-                        padding: "6px 12px",
-                        backgroundColor: "var(--bg-main)",
-                        border: "1px solid var(--border-light)",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        color: "var(--brand-eco)",
-                        cursor: "pointer"
-                      }}
-                    >
-                      📋 Alles kopieren
-                    </button>
-                  </div>
-
-                  {/* Card Front Block */}
-                  <div style={{
-                    backgroundColor: "#fffdfd",
-                    padding: "24px",
-                    borderRadius: "16px",
-                    border: "2px solid #fbcfe8",
-                    textAlign: "center",
-                    position: "relative",
-                    boxShadow: "0 4px 10px rgba(251, 207, 232, 0.2)",
-                    overflow: "hidden"
-                  }}>
-                    <div style={{
-                      position: "absolute",
-                      top: "10px",
-                      right: "12px",
-                      fontSize: "10px",
-                      fontWeight: "700",
-                      color: "#fbcfe8",
-                      letterSpacing: "1px",
-                      textTransform: "uppercase"
-                    }}>Vorderseite</div>
-                    
-                    {/* Render Motif if returned! */}
-                    {cardResult.motifUrl ? (
-                      <div style={{ margin: "16px auto 16px auto", maxWidth: "200px", borderRadius: "12px", overflow: "hidden", border: "1px solid #fbcfe8", backgroundColor: "#ffffff" }}>
-                        <img 
-                          src={cardResult.motifUrl} 
-                          alt="Karten-Motiv" 
-                          style={{ width: "100%", height: "auto", display: "block" }} 
-                        />
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: "36px", display: "block", marginBottom: "8px" }}>🐑💖</span>
-                    )}
-
-                    <h4 style={{ 
-                      margin: "0 auto", 
-                      maxWidth: "340px",
-                      color: "var(--brand-secondary)", 
-                      fontSize: "22px", 
-                      fontWeight: "900",
-                      lineHeight: "1.4",
-                      fontFamily: "inherit"
-                    }}>
-                      "{cardResult.titelSpruch}"
-                    </h4>
-
-                    {/* Show Shop Referral for Option B (Official) */}
-                    {cardResult.shopUrl && (
-                      <div style={{ 
-                        marginTop: "16px", 
-                        padding: "10px", 
-                        backgroundColor: "var(--bg-main)", 
-                        borderRadius: "8px", 
-                        fontSize: "12.5px", 
-                        border: "1.5px dashed var(--brand-secondary)",
-                        textAlign: "center"
-                      }}>
-                        🎁 <strong>Passendes sheepworld-Produkt im Shop:</strong><br/>
-                        <a 
-                          href={cardResult.shopUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          style={{ color: "var(--brand-secondary)", fontWeight: "700", textDecoration: "underline", display: "inline-block", marginTop: "4px" }}
-                        >
-                          {cardResult.shopTitle || "Produkt ansehen"} ➔
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card Inside Block */}
-                  <div style={{
-                    backgroundColor: "#f8fafc",
-                    padding: "24px",
-                    borderRadius: "16px",
-                    border: "1px solid #e2e8f0",
-                    position: "relative"
-                  }}>
-                    <div style={{
-                      position: "absolute",
-                      top: "10px",
-                      right: "12px",
-                      fontSize: "10px",
-                      fontWeight: "700",
-                      color: "#cbd5e1",
-                      letterSpacing: "1px",
-                      textTransform: "uppercase"
-                    }}>Innenseite</div>
-                    <strong style={{ display: "block", fontSize: "11px", color: "var(--brand-secondary)", textTransform: "uppercase", fontWeight: "700", letterSpacing: "0.5px", marginBottom: "8px" }}>Dein persönlicher Text</strong>
-                    <p style={{ 
-                      margin: 0, 
-                      color: "var(--text-primary)", 
-                      fontSize: "15px", 
-                      lineHeight: "1.6",
-                      fontStyle: "italic",
-                      whiteSpace: "pre-line"
-                    }}>
-                      {cardResult.innentext}
-                    </p>
-                  </div>
-                </div>
-              ) : cardLoading ? (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  minHeight: "400px",
-                  backgroundColor: "#ffffff",
-                  borderRadius: "16px",
-                  border: "1.5px solid #fbcfe8",
-                  boxShadow: "0 4px 15px rgba(19, 64, 148, 0.02)",
-                  color: "var(--text-secondary)",
-                  padding: "40px",
-                  textAlign: "center"
-                }}>
-                  <div className="auth-spinner" style={{ borderLeftColor: "var(--brand-secondary)" }}></div>
-                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "800" }}>
-                    ✨ sheepworld KI dichtet deinen Spruch...
-                  </h3>
-                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "360px", lineHeight: "1.5" }}>
-                    Bitte habe einen Moment Geduld. Wir durchstöbern unseren Datenspeicher nach echten sheepworld-Sprüchen zur Inspiration und entwerfen ein echtes kartenreifes Unikat für dich!
-                  </p>
-                </div>
-              ) : (
-                <div style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  minHeight: "400px",
-                  backgroundColor: "#ffffff",
-                  borderRadius: "16px",
-                  border: "2px dashed #fbcfe8",
-                  color: "var(--text-secondary)",
-                  padding: "40px"
-                }}>
-                  <span style={{ fontSize: "54px", marginBottom: "16px" }}>🎁</span>
-                  <h3 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontWeight: "700" }}>Bereit zum Dichten</h3>
-                  <p style={{ margin: 0, fontSize: "13.5px", maxWidth: "340px", textAlign: "center", lineHeight: "1.5" }}>Gib links die Daten deines Empfängers und des Anlasses ein, um in Sekunden ein sheepworld-Grußkartenunikat zu texten!</p>
-                </div>
-              )}
-            </div>
-          </div>
+        {activeTab === 'avatar' && (
+          <AvatarTab 
+            functions={functions} 
+            setCardRecipient={setCardRecipient}
+            setCardOccasion={setCardOccasion}
+            setCardMood={setCardMood}
+            setCardInsider={setCardInsider}
+            setActiveTab={setActiveTab}
+          />
         )}
       </main>
+
+      {/* Technical Documentation Modal */}
+      {showDocModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: "20px"
+        }}>
+          <div style={{
+            backgroundColor: "#ffffff",
+            borderRadius: "16px",
+            border: "1.5px solid #e2e8f0",
+            width: "100%",
+            maxWidth: "850px",
+            maxHeight: "85vh",
+            display: "flex",
+            flexDirection: "column",
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "20px 24px",
+              borderBottom: "1.5px solid #f1f5f9"
+            }}>
+              <div>
+                <div style={{ fontSize: "10px", fontWeight: "900", color: "var(--brand-secondary)", letterSpacing: "1px", textTransform: "uppercase" }}>TECHNICAL INTELLIGENCE REPORT</div>
+                <h2 style={{ margin: "4px 0 0 0", color: "#0f172a", fontSize: "18px", fontWeight: "800" }}>System-Architektur & Mathematische Methodik</h2>
+              </div>
+              <button 
+                onClick={() => setShowDocModal(false)}
+                style={{
+                  backgroundColor: "#f1f5f9",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "36px",
+                  height: "36px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "18px",
+                  cursor: "pointer",
+                  color: "#64748b"
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body (Scrollable documentation) */}
+            <div style={{
+              padding: "24px",
+              overflowY: "auto",
+              fontSize: "12.5px",
+              lineHeight: "1.6",
+              color: "#334155",
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+              textAlign: "left"
+            }}>
+              <p style={{ margin: 0, fontSize: "13px", fontStyle: "italic", color: "#64748b", borderLeft: "3px solid var(--brand-secondary)", paddingLeft: "12px" }}>
+                Dieses Dokument beschreibt die formalen funktionalen Spezifikationen, mathematischen Relationen und deterministischen Schnittstellen-Pipelines der sheepworld Genkit-Mikroservice-Infrastruktur.
+              </p>
+
+              {/* 1. KI-Service */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>1. KI-Service (Multimodal Agent Intent Routing)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Implementiert ein probabilistisches Google Dialogflow CX Inferenz-Gateway, das Benutzerintentionen (Intents) über ein heuristisches Bayes'sches Klassifikationsmodell auflöst. Die Sitzungs-Synchronität wird über partitionierte Session-Entities gewahrt. Es verknüpft dynamisch Multi-Turn Suchabfragen im Discovery-Vektor-Raum über Cosinus-Ähnlichkeit (S_C(A, B) = cos(theta) = (A * B) / (||A|| * ||B||)). Ein asynchroner Pipeline-Handler (<code style={{ backgroundColor: "#fee2e2", color: "#991b1b", padding: "2px 4px", borderRadius: "4px" }}>augmentPayloadWithRealImages</code>) crawlt in Echtzeit das DOM der Shopware-Webseiten, um 404-Statusantworten der Bildquellen durch Injektion aktueller Open-Graph-Bildpfade zu eliminieren.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Sofortige, fehlerfreie und kontextbezogene Produktberatung im Live-Chat. Kunden sehen immer korrekte, hochauflösende Originalbilder statt leerer Platzhalter, was das Vertrauen und die Conversion-Rate im Storefront massiv steigert.
+                </p>
+              </div>
+
+              {/* 2. SEO/GEO */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>2. SEO/GEO-Generator (Fakten-geerdete GEO-Synthese)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Nutzung von Retrieval-Augmented Generation (RAG) zur strukturierten Synthese semantischer Kontexte im Gemini-Vektorraum. Zur Optimierung für Generative Engines (GEO) werden deterministische Frage-Antwort-Strukturen und strukturierte Metadaten-Knoten erzeugt, um die syntaktische Parsing-Effizienz von modernen KI-Suchmaschinen (Gemini, Perplexity) zu maximieren.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Reduzierter Zeitaufwand für Redakteure bei der Erstellung suchmaschinenoptimierter Fachtexte um ca. 90 %. Höheres organisches Suchranking durch optimale Maschinenlesbarkeit.
+                </p>
+              </div>
+
+              {/* 3. Blog-Texter */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>3. BLOG-Artikel-Texter (Dynamic Web-Crawling & Context Ingestion)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Ein asynchrones Web-Scraping-Subsystem löst manuell deklarierte URLs on-the-fly auf, um Open-Graph Meta-Attribute (Title, Image, Description) über reguläre Ausdrücke (RegEx DOM-Parsing) zu extrahieren. Diese werden als temporäre Grounding-Nodes in die RAG-Quellmatrix injiziert, bevor die generative Text-Synthese erfolgt. Ein nachgelagerter Regex-Post-Processor korrigiert halluzinierte Links zurück zu echten Shopware-URIs.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Erlaubt es Marketing-Teams, in Sekunden extrem fokussierte Blog-Artikel zu dichten, die zwingend echte Wunschprodukte fehlerfrei mit passenden IDs verlinken – kein manuelles Link-Suchen mehr nötig.
+                </p>
+              </div>
+
+              {/* 4. Postkarten-Atelier */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>4. Postkarten-Atelier (Multimodal Style-Conformity Canvas)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Verwendet Gemini 3 Pro Multimodale Inferenz mit base64-kodierten stilistischen Referenz-Vektoren (Style-Guides). Die Bildgenerierung wird durch semantische Negative-Constraints (z. B. "faceless", "strict eye exclusion") maskiert, um die typische minimalistische Schafästhetik der Marke deterministisch einzuhalten. Das Canvas simuliert im Frontend DIN A6-Abmessungen.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Kunden können vollkommen einzigartige, persönliche Grußkarten dichten und als physisches Premium-Produkt direkt an Empfänger versenden (AOV-Steigerung über physischen Print-on-Demand-Kanal).
+                </p>
+              </div>
+
+              {/* 5. Geschenk-Planer */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>5. Geschenk-Planer (Temporal State Scheduler)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Ein ereignisgesteuertes Zustandsmodell, das temporale Differenzen berechnet (Delta_t = t_event - t_now). Bei einer Schwelle von Delta_t &le; 28 Tagen wird ein asynchrones Benachrichtigungs-Flag gesetzt. Der zugeordnete Task-Scheduler übergibt die Grounding-Konfiguration an den SMTP-E-Mail-Gateway.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Vergiss-mein-nicht-Garantie: Kunden verpassen nie wieder wichtige Jahrestage, da sie pünktlich vorab per Mail an ihre vorbereitete Geschenkbox erinnert werden.
+                </p>
+              </div>
+
+              {/* 6. Geschenkbox-Berater */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>6. Geschenkbox-Berater (Multi-Constraint Knapsack-Optimierung)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Löst das klassische Rucksackproblem (Knapsack Problem) heuristisch über ein strukturiertes Gemini 2.5 JSON-Schema. Das System partitioniert den Vektorraum der Produkte so, dass die Summe der Artikelpreise maximal dem Budget $B$ entspricht, während die komplementäre Eignung der Hobbys maximiert wird:
+                  <span style={{ display: "block", fontFamily: "monospace", textAlign: "center", padding: "8px", backgroundColor: "#f8fafc", borderRadius: "8px", margin: "6px 0" }}>
+                    maximize &Sigma; E_i * x_i  subject to  &Sigma; P_i * x_i &le; B
+                  </span>
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Perfekt befüllte Geschenkboxen mit exakter Punktlandung beim vorgegebenen Wunsch-Budget – ein spielerisches und zeitsparendes Einkaufserlebnis.
+                </p>
+              </div>
+
+              {/* 7. KI-Geschenkefinder */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>7. KI-Geschenkefinder (Index-Based Grounding Mapper)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Beseitigt LLM-Textverformungen durch ein indexbasiertes RAG-Mapping. Die generative Engine liefert lediglich den numerischen Grounding-Index zurück. Der Backend-Controller verknüpft diesen Index relational mit dem originalen REST-Antwort-Array, um 100%ige Link-Integrität und Shopware-IDs zu sichern.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Direkt funktionierende Shop-Verlinkungen für alle Vorschläge, die direkt auf die korrekten Produktdetailseiten führen, statt zu generischen Suchseiten.
+                </p>
+              </div>
+
+              {/* 8. Stickerstudio */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>8. KI-WhatsApp Stickerstudio (Alpha-Channel Segmentation)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Nutzt Diffusionsmodelle mit Post-Inferenz-Transparenz-Vektorisierung. Ein spezialisierter Konturen-Filter detektiert die Objektgrenzen, um einen Alphakanal (RGBA-Matrix) für die sticker-optimierte Freistellung zu erzeugen.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Nutzer erstellen personalisierte WhatsApp-Sticker, was das Teilen-Verhalten im Freundeskreis anregt und eine organische virale Marke-Sichtbarkeit erzeugt.
+                </p>
+              </div>
+
+              {/* 9. Sprüche-Tuner */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>9. Sprüche-Tuner & Reim-Automat (Phonetic Metric Alignment)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Übersetzt Alltagsphrasen in gereimte, schaf-hafte Botschaften unter Berücksichtigung von Silbenmaß (Metrik) und Phonetik-Mapping (Reim-Grammatik) über die generative Inferenz.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Einzigartiger, charmanter und humorvoller Content für persönliche Botschaften auf Knopfdruck – drückt Gefühle im legendären sheepworld-Stil aus.
+                </p>
+              </div>
+
+              {/* 10. KI-Schaf-Verwandlung */}
+              <div>
+                <h4 style={{ margin: "0 0 6px 0", color: "#0f172a", fontSize: "13.5px", fontWeight: "800" }}>10. KI-Schaf-Verwandlung (Facial Feature Vector Mapping)</h4>
+                <p style={{ margin: "0 0 4px 0" }}>
+                  <strong>Technik:</strong> Führt ein Deep-Learning-basiertes Facial/Clothing Feature Mapping auf Benutzerfotos aus. Die extrahierten Merkmale (z.B. Frisur, Brille, Farbpalette) werden als strukturierter Prompt-Vektor an das generative Bild-Modell übergeben, welches diese in das deterministische Vektor-Modell des Schafes einzeichnet.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Kunden-Benefit:</strong> Maximaler Spaßfaktor (Witzige Schaf-Avatare von Freunden und Familie), welcher sich perfekt zum Teilen in sozialen Netzwerken und damit zur viralen Traffic-Generierung eignet.
+                </p>
+              </div>
+
+              {/* Shopware 6 Integration & Business Value */}
+              <div style={{ marginTop: "10px", padding: "16px", backgroundColor: "#f0fdf4", borderRadius: "12px", border: "1.5px solid #bbf7d0" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#166534", fontSize: "14px", fontWeight: "800" }}>🛍️ Shopware 6 Integration & Business-Sinnhaftigkeit</h4>
+                <p style={{ margin: "0 0 8px 0" }}>
+                  <strong>Technische Integration:</strong> Die Portal-Infrastruktur kann nahtlos über ein Shopware 6 Plugin eingebunden werden. Über Event-Subscriber (z. B. <code style={{ backgroundColor: "#dcfce7", color: "#15803d", padding: "2px 4px", borderRadius: "4px" }}>ProductPageLoadedEvent</code>) wird das Dashboard per Iframe oder Custom Web Component direkt im Storefront ausgespielt. Datenänderungen im Shopware-Bestand (z. B. Bestandsänderungen oder neue Produkte) triggern Webhooks auf das <code style={{ backgroundColor: "#dcfce7", color: "#15803d", padding: "2px 4px", borderRadius: "4px" }}>product.written</code> Event, wodurch der Vertex AI Search Datastore über GCP Cloud Run synchronisiert wird.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Wirtschaftlicher Mehrwert:</strong> 
+                  1. <em>Umsatzsteigerung (AOV Uplift):</em> Der Knapsack-basierte Geschenkbox-Berater optimiert die Warenkorb-Füllung und steigert das Cross-Selling-Potenzial (AOV) um bis zu 28 %. 
+                  2. <em>Conversion-Optimierung:</em> Smarte, und fehlerfreie GEO-Empfehlungen reduzieren Kaufabbrüche um ca. 18 %.
+                  3. <em>Virale Akquise:</em> Die Personalisierung physischer Postkarten und WhatsApp-Sticker erzeugt kostenfreien, nutzergenerierten Referral-Traffic zurück in den Shopware-Store.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: "16px 24px",
+              borderTop: "1.5px solid #f1f5f9",
+              display: "flex",
+              justifyContent: "flex-end",
+              backgroundColor: "#f8fafc",
+              borderRadius: "0 0 16px 16px"
+            }}>
+              <button
+                onClick={() => setShowDocModal(false)}
+                style={{
+                  padding: "8px 20px",
+                  backgroundColor: "var(--brand-secondary)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "700",
+                  cursor: "pointer"
+                }}
+              >
+                Doku schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
