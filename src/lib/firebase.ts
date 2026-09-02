@@ -23,7 +23,8 @@ const auth = getAuth(app);
 
 // Connect to the local emulator in development mode
 if (process.env.NODE_ENV === 'development') {
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  connectFunctionsEmulator(functions, host, 5001);
 }
 
 export { app, functions, auth };
