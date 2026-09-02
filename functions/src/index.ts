@@ -168,6 +168,28 @@ async function fetchPageDetails(url: string): Promise<{ title: string; url: stri
   }
 }
 
+// Helper function to log module usage to Firestore
+async function logModuleUsage(moduleName: string, request: any) {
+  try {
+    const admin = await getFirebaseAdmin();
+    const db = admin.firestore();
+
+    const uid = request.auth?.uid || "anonym";
+    const email = request.auth?.token?.email || "anonymer_benutzer@myc3.com";
+
+    logger.info(`Audit Log: User ${email} (${uid}) accessed module: ${moduleName}`);
+
+    await db.collection("audit_logs").add({
+      uid: uid,
+      email: email,
+      module: moduleName,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    logger.error(`Failed to write audit log for module ${moduleName}:`, err);
+  }
+}
+
 // Helper to search the Vertex AI Search Enterprise Engine (returns raw snippets)
 async function searchVertexAISearch(query: string): Promise<SearchResult[]> {
   try {
@@ -380,6 +402,7 @@ async function augmentPayloadWithRealImages(data: any) {
 // 1. Define the Chat/Conversation Proxy (onRequest / onCall)
 export const runSession = onCall({ region: "europe-west4", cors: true }, async (request) => {
   try {
+    await logModuleUsage("KI-Service (Chat)", request);
     const { message, sessionId } = request.data;
     if (!message) {
       throw new HttpsError("invalid-argument", "Missing field: message");
@@ -443,6 +466,7 @@ export const runSession = onCall({ region: "europe-west4", cors: true }, async (
 // 2. Export the Genkit SEO Content-Generator as a Callable Cloud Function
 export const generateSEOContent = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("SEO/GEO-Generator", request);
     const { topic, bulletPoints, targetAudience, keywords, productUrl } = request.data;
     
     if (!topic || !bulletPoints) {
@@ -569,6 +593,7 @@ function getReferenceMediaParts() {
 // 3. Export the Greeting Card Generator as a Callable Cloud Function
 export const generateGreetingCard = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("Postkarten-Atelier", request);
     const { empfaenger, absender, anlass, stimmung, insider, motifType: initialMotifType } = request.data;
     let motifType = initialMotifType || "official";
 
@@ -860,6 +885,7 @@ CRITICAL BRAND COMPLIANCE RULES:
 // 4. Export the Smart Gift Finder (Bundle Builder) as a Callable Cloud Function
 export const generateGiftBundle = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("Geschenkbox-Berater", request);
     const { relationship, interests, occasion, budget } = request.data;
 
     if (!relationship || !interests || !occasion || !budget) {
@@ -1001,6 +1027,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 // 5. Export the Sprüche-Tuner / Reim-Automat as a Callable Cloud Function
 export const tunePhrase = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 120 }, async (request) => {
   try {
+    await logModuleUsage("Sprüche-Tuner", request);
     const { text } = request.data;
     if (!text) {
       throw new HttpsError("invalid-argument", "Missing field: text");
@@ -1056,6 +1083,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 // 6. Export the Avatar-Verwandlung as a Callable Cloud Function
 export const generateAvatar = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("KI-Schaf-Verwandlung", request);
     const { image } = request.data;
     if (!image) {
       throw new HttpsError("invalid-argument", "Missing field: image");
@@ -1226,6 +1254,7 @@ CRITICAL BRAND COMPLIANCE RULES:
 // 9. Export the Guided Gift Recommendations as a Callable Cloud Function
 export const generateGiftRecommendations = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("KI-Geschenkefinder", request);
     const { relationship, interests, occasion, budget } = request.data;
 
     if (!relationship || !interests || !occasion || !budget) {
@@ -1352,6 +1381,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 // 10. Export the Blog-Artikel-Texter as a Callable Cloud Function
 export const generateBlogArticle = onCall({ region: "europe-west4", cors: true, timeoutSeconds: 300 }, async (request) => {
   try {
+    await logModuleUsage("BLOG-Artikel-Texter", request);
     const { topic, targetProducts, productUrls, keywords } = request.data;
     
     if (!topic) {
