@@ -520,7 +520,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured content using Gemini 2.5 Flash via Vertex AI plugin
     const response = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -640,7 +640,7 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured text content using Gemini 2.5 Flash
     const textResponse = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -947,7 +947,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured bundle using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -980,38 +980,40 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
       .map(r => r.uri)
       .filter(u => u && u.startsWith("http") && u !== "https://sheepworld.de" && u !== "https://www.sheepworld.de");
 
-    // Attempt to enrich any missing product images and sanitize URLs
-    for (const prod of parsedOutput.products) {
-      const idx = (prod.groundingIndex || 1) - 1;
-      const matchedSearchDoc = searchResults[idx];
+    // Attempt to enrich any missing product images and sanitize URLs in parallel
+    await Promise.all(
+      parsedOutput.products.map(async (prod: any) => {
+        const idx = (prod.groundingIndex || 1) - 1;
+        const matchedSearchDoc = searchResults[idx];
 
-      if (matchedSearchDoc && matchedSearchDoc.uri) {
-        // Enforce the 100% authentic original URL from the search result!
-        prod.url = matchedSearchDoc.uri;
-        prod.title = matchedSearchDoc.title;
-      } else {
-        // Fuzzy search fallback
-        const foundByTitle = searchResults.find(r => r.title.toLowerCase().includes(prod.title.toLowerCase()) || prod.title.toLowerCase().includes(r.title.toLowerCase()));
-        if (foundByTitle && foundByTitle.uri) {
-          prod.url = foundByTitle.uri;
-        } else if (!prod.url || prod.url.startsWith("http") === false || prod.url.includes("sheepworld.de") === false) {
-          prod.url = `https://www.sheepworld.de/search?sSearch=${encodeURIComponent(prod.title)}`;
-        }
-      }
-
-      const isRealUri = validUris.includes(prod.url) || (matchedSearchDoc && matchedSearchDoc.uri === prod.url);
-
-      const isHallucinatedImage = prod.imageUrl && (prod.imageUrl.includes("/media/image/") || prod.imageUrl.includes("sheepworld.de/media"));
-      if (!prod.imageUrl || prod.imageUrl.startsWith("http") === false || isHallucinatedImage) {
-        if (isRealUri && prod.url && prod.url !== "https://sheepworld.de" && prod.url !== "https://www.sheepworld.de") {
-          const img = await extractOgImage(prod.url);
-          prod.imageUrl = img || "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+        if (matchedSearchDoc && matchedSearchDoc.uri) {
+          // Enforce the 100% authentic original URL from the search result!
+          prod.url = matchedSearchDoc.uri;
+          prod.title = matchedSearchDoc.title;
         } else {
-          // Fallback static illustration images
-          prod.imageUrl = "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          // Fuzzy search fallback
+          const foundByTitle = searchResults.find(r => r.title.toLowerCase().includes(prod.title.toLowerCase()) || prod.title.toLowerCase().includes(r.title.toLowerCase()));
+          if (foundByTitle && foundByTitle.uri) {
+            prod.url = foundByTitle.uri;
+          } else if (!prod.url || prod.url.startsWith("http") === false || prod.url.includes("sheepworld.de") === false) {
+            prod.url = `https://www.sheepworld.de/search?sSearch=${encodeURIComponent(prod.title)}`;
+          }
         }
-      }
-    }
+
+        const isRealUri = validUris.includes(prod.url) || (matchedSearchDoc && matchedSearchDoc.uri === prod.url);
+
+        const isHallucinatedImage = prod.imageUrl && (prod.imageUrl.includes("/media/image/") || prod.imageUrl.includes("sheepworld.de/media"));
+        if (!prod.imageUrl || prod.imageUrl.startsWith("http") === false || isHallucinatedImage) {
+          if (isRealUri && prod.url && prod.url !== "https://sheepworld.de" && prod.url !== "https://www.sheepworld.de") {
+            const img = await extractOgImage(prod.url);
+            prod.imageUrl = img || "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          } else {
+            // Fallback static illustration images
+            prod.imageUrl = "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          }
+        }
+      })
+    );
 
     return parsedOutput;
 
@@ -1054,7 +1056,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     const ai = await getGenkit();
 
     const response = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -1113,7 +1115,7 @@ Return a structured JSON with:
 - features: An array of strings representing these key cartoon-friendly details (e.g., ["glasses", "curly brown hair", "blue sweater"]).`;
 
     const analyzeResponse = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: [
         {
           media: {
@@ -1310,7 +1312,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured recommendations using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -1335,37 +1337,39 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
       .map(r => r.uri)
       .filter(u => u && u.startsWith("http") && u !== "https://sheepworld.de" && u !== "https://www.sheepworld.de");
 
-    // Attempt to enrich any missing product images and sanitize URLs
-    for (const prod of parsedOutput.recommendations) {
-      const idx = (prod.groundingIndex || 1) - 1;
-      const matchedSearchDoc = searchResults[idx];
+    // Attempt to enrich any missing product images and sanitize URLs in parallel
+    await Promise.all(
+      parsedOutput.recommendations.map(async (prod: any) => {
+        const idx = (prod.groundingIndex || 1) - 1;
+        const matchedSearchDoc = searchResults[idx];
 
-      if (matchedSearchDoc && matchedSearchDoc.uri) {
-        // Enforce the 100% authentic original URL from the search result!
-        prod.url = matchedSearchDoc.uri;
-        prod.title = matchedSearchDoc.title;
-      } else {
-        // Fuzzy search fallback
-        const foundByTitle = searchResults.find(r => r.title.toLowerCase().includes(prod.title.toLowerCase()) || prod.title.toLowerCase().includes(r.title.toLowerCase()));
-        if (foundByTitle && foundByTitle.uri) {
-          prod.url = foundByTitle.uri;
-        } else if (!prod.url || prod.url.startsWith("http") === false || prod.url.includes("sheepworld.de") === false) {
-          prod.url = `https://www.sheepworld.de/search?sSearch=${encodeURIComponent(prod.title)}`;
-        }
-      }
-
-      const isRealUri = validUris.includes(prod.url) || (matchedSearchDoc && matchedSearchDoc.uri === prod.url);
-
-      const isHallucinatedImage = prod.imageUrl && (prod.imageUrl.includes("/media/image/") || prod.imageUrl.includes("sheepworld.de/media"));
-      if (!prod.imageUrl || prod.imageUrl.startsWith("http") === false || isHallucinatedImage) {
-        if (isRealUri && prod.url && prod.url !== "https://sheepworld.de" && prod.url !== "https://www.sheepworld.de") {
-          const img = await extractOgImage(prod.url);
-          prod.imageUrl = img || "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+        if (matchedSearchDoc && matchedSearchDoc.uri) {
+          // Enforce the 100% authentic original URL from the search result!
+          prod.url = matchedSearchDoc.uri;
+          prod.title = matchedSearchDoc.title;
         } else {
-          prod.imageUrl = "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          // Fuzzy search fallback
+          const foundByTitle = searchResults.find(r => r.title.toLowerCase().includes(prod.title.toLowerCase()) || prod.title.toLowerCase().includes(r.title.toLowerCase()));
+          if (foundByTitle && foundByTitle.uri) {
+            prod.url = foundByTitle.uri;
+          } else if (!prod.url || prod.url.startsWith("http") === false || prod.url.includes("sheepworld.de") === false) {
+            prod.url = `https://www.sheepworld.de/search?sSearch=${encodeURIComponent(prod.title)}`;
+          }
         }
-      }
-    }
+
+        const isRealUri = validUris.includes(prod.url) || (matchedSearchDoc && matchedSearchDoc.uri === prod.url);
+
+        const isHallucinatedImage = prod.imageUrl && (prod.imageUrl.includes("/media/image/") || prod.imageUrl.includes("sheepworld.de/media"));
+        if (!prod.imageUrl || prod.imageUrl.startsWith("http") === false || isHallucinatedImage) {
+          if (isRealUri && prod.url && prod.url !== "https://sheepworld.de" && prod.url !== "https://www.sheepworld.de") {
+            const img = await extractOgImage(prod.url);
+            prod.imageUrl = img || "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          } else {
+            prod.imageUrl = "https://upload.wikimedia.org/wikipedia/de/7/70/Sheepworld_Logo.svg";
+          }
+        }
+      })
+    );
 
     return parsedOutput;
 
@@ -1471,7 +1475,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 5. Generate structured blog content using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-2.5-flash"),
+      model: vertexAI.model("gemini-3.5-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
