@@ -63,7 +63,7 @@ async function getGenkit() {
       plugins: [
         vertexAI({
           projectId: PROJECT_ID,
-          location: "us-central1" // Flagship region for Gemini and Imagen models
+          location: "us" // Multi-regional 'us' for stable Gemini 3.6/3.7 Flash models
         })
       ]
     });
@@ -520,7 +520,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured content using Gemini 2.5 Flash via Vertex AI plugin
     const response = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -640,7 +640,7 @@ Erstelle eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured text content using Gemini 2.5 Flash
     const textResponse = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -947,7 +947,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured bundle using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -1056,7 +1056,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     const ai = await getGenkit();
 
     const response = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -1115,7 +1115,7 @@ Return a structured JSON with:
 - features: An array of strings representing these key cartoon-friendly details (e.g., ["glasses", "curly brown hair", "blue sweater"]).`;
 
     const analyzeResponse = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: [
         {
           media: {
@@ -1312,7 +1312,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 4. Generate structured recommendations using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
@@ -1475,7 +1475,7 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
 
     // 5. Generate structured blog content using Gemini 2.5 Flash
     const response = await ai.generate({
-      model: vertexAI.model("gemini-3.5-flash"),
+      model: vertexAI.model("gemini-3.7-flash"),
       prompt: prompt,
       output: {
         schema: z.object({
