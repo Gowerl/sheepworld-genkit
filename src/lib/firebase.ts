@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration using environment variables or fallbacks for sheep-vertex-ai
 const firebaseConfig = {
@@ -21,10 +22,13 @@ const functions = getFunctions(app, 'europe-west4');
 // Initialize Firebase Auth
 const auth = getAuth(app);
 
+// Initialize Firestore
+const db = getFirestore(app);
+
 // Connect to the local emulator in development mode
 if (process.env.NODE_ENV === 'development') {
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   connectFunctionsEmulator(functions, host, 5001);
 }
 
-export { app, functions, auth };
+export { app, functions, auth, db };

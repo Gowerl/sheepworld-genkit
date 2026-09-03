@@ -16,10 +16,11 @@ import StickerTab from "@/components/tabs/StickerTab";
 import TunerTab from "@/components/tabs/TunerTab";
 import AvatarTab from "@/components/tabs/AvatarTab";
 import BlogTab from "@/components/tabs/BlogTab";
+import LogsTab from "@/components/tabs/LogsTab";
 
 export default function Home() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'chat' | 'seo' | 'cards' | 'planner' | 'bundle' | 'sticker' | 'tuner' | 'avatar' | 'finder' | 'blog'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'seo' | 'cards' | 'planner' | 'bundle' | 'sticker' | 'tuner' | 'avatar' | 'finder' | 'blog' | 'logs'>('chat');
   const [showDocModal, setShowDocModal] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState("session_" + Math.random().toString(36).substring(2, 10));
@@ -616,6 +617,29 @@ export default function Home() {
             >
               ✍️ Sprüche-Tuner
             </button>
+            {user?.email === "walter@myc3.com" && (
+              <button 
+                className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
+                onClick={() => setActiveTab('logs')}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "30px",
+                  border: "1.5px solid",
+                  borderColor: activeTab === 'logs' ? "var(--brand-secondary)" : "#e2e8f0",
+                  backgroundColor: activeTab === 'logs' ? "var(--bg-main)" : "#ffffff",
+                  color: activeTab === 'logs' ? "var(--brand-eco)" : "var(--text-secondary)",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                📊 Admin-Logs
+              </button>
+            )}
           </div>
         </div>
 
@@ -740,6 +764,10 @@ export default function Home() {
             setCardInsider={setCardInsider}
             setActiveTab={setActiveTab}
           />
+        )}
+
+        {activeTab === 'logs' && user?.email === "walter@myc3.com" && (
+          <LogsTab />
         )}
       </main>
 
