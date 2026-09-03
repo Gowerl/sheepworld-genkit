@@ -1510,3 +1510,44 @@ Generiere eine strukturierte JSON-Antwort mit exakt folgenden Feldern:
     throw new HttpsError("internal", `Internal Server Error: ${error.message}`);
   }
 });
+
+// 11. Export getAuditLogs as a Secure Callable Cloud Function
+export const getAuditLogs = onCall({ region: "europe-west4", cors: true }, async (request) => {
+  try {
+    const userEmail = request.auth?.token?.email || "";
+    if (userEmail !== "walter@myc3.com") {
+      logger.warn(`Unauthorized access attempt to getAuditLogs by user: ${userEmail}`);
+      throw new HttpsError("permission-denied", "Unauthorized. This action is restricted to walter@myc3.com.");
+    }
+
+    logger.info(`Authorized access to getAuditLogs by user: ${userEmail}`);
+
+    const admin = await getFirebaseAdmin();
+    const db = admin.firestore();
+
+    const snapshot = await db.collection("audit_logs")
+      .orderBy("timestamp", "desc")
+      .limit(100)
+      .get();
+
+    const logs: any[] = [];
+    snapshot.forEach((doc: any) => {
+      const data = doc.data();
+      logs.push({
+        id: doc.id,
+        uid: data.uid || "anonym",
+        email: data.email || "anonymer_benutzer@myc3.com",
+        module: data.module || "Unbekannt",
+        timestamp: data.timestamp ? data.timestamp.toDate().toISOString() : null
+      });
+    });
+
+    return { logs };
+  } catch (error: any) {
+    logger.error("Error in getAuditLogs callable function:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", `Internal Server Error: ${error.message}`);
+  }
+});

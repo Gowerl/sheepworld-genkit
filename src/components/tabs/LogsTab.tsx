@@ -1,49 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import React, { useState, useEffect, useCallback } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 
 interface AuditLog {
   id: string;
   uid: string;
   email: string;
   module: string;
-  timestamp?: any;
+  timestamp?: string | null;
 }
 
 export default function LogsTab() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
 
+  const fetchLogs = useCallback(async (isAutoRefresh = false) => {
+    if (!isAutoRefresh) {
+      if (logs.length === 0) setLoading(true);
+      else setRefreshing(true);
+    }
+    setErrorMsg(null);
+
+    try {
+      const getAuditLogsCallable = httpsCallable(functions, 'getAuditLogs');
+      const response = await getAuditLogsCallable();
+      const data = response.data as { logs: AuditLog[] };
+      
+      if (data && Array.isArray(data.logs)) {
+        setLogs(data.logs);
+      }
+    } catch (err: any) {
+      console.error("Error fetching audit logs via Cloud Function:", err);
+      setErrorMsg(err.message || "Fehler beim Abrufen der Logs vom Server.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [logs.length]);
+
+  // Initial fetch and polling every 8 seconds
   useEffect(() => {
-    const q = query(
-      collection(db, 'audit_logs'),
-      orderBy('timestamp', 'desc'),
-      limit(100)
-    );
+    fetchLogs();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logsData: AuditLog[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        logsData.push({
-          id: doc.id,
-          uid: data.uid || 'anonym',
-          email: data.email || 'anonymer_benutzer@myc3.com',
-          module: data.module || 'Unbekannt',
-          timestamp: data.timestamp
-        });
-      });
-      setLogs(logsData);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error listening to audit logs:", error);
-      setLoading(false);
-    });
+    const interval = setInterval(() => {
+      fetchLogs(true);
+    }, 8000);
 
-    return () => unsubscribe();
-  }, []);
+    return () => clearInterval(interval);
+  }, [fetchLogs]);
 
   // Filter logic
   const filteredLogs = logs.filter(log => {
@@ -72,7 +80,7 @@ export default function LogsTab() {
   // Format timestamp helper
   const formatTime = (ts: any) => {
     if (!ts) return 'Gerade eben...';
-    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    const date = new Date(ts);
     return date.toLocaleString('de-DE', {
       day: '2-digit',
       month: '2-digit',
@@ -85,17 +93,59 @@ export default function LogsTab() {
 
   return (
     <div className="tab-pane" style={{ animation: 'fadeIn 0.3s ease' }}>
-      <div className="pane-header" style={{ marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '15px' }}>
-        <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          📊 Echtzeit Admin-Nutzungslogs
-          <span style={{ fontSize: '0.85rem', fontWeight: 400, backgroundColor: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '9999px' }}>
-            Live aus Firestore (Letzte 100)
+      <div className="pane-header" style={{ marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+        <div>
+          <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📊 Echtzeit Admin-Nutzungslogs
+            <span style={{ fontSize: '0.85rem', fontWeight: 400, backgroundColor: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '9999px' }}>
+              Bypassed via Secure Backend (Letzte 100)
+            </span>
+          </h3>
+          <p style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '4px' }}>
+            Diese Ansicht ist exklusiv für dich (walter@myc3.com) sichtbar. Aktualisiert sich vollautomatisch alle 8 Sekunden.
+          </p>
+        </div>
+
+        {/* Refresh Button */}
+        <button
+          onClick={() => fetchLogs()}
+          disabled={loading || refreshing}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            backgroundColor: '#ffffff',
+            border: '1.5px solid #e2e8f0',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            color: '#334155',
+            cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span style={{ 
+            display: 'inline-block', 
+            animation: refreshing ? 'spin 1s linear infinite' : 'none',
+            fontSize: '1rem'
+          }}>
+            🔄
           </span>
-        </h3>
-        <p style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '4px' }}>
-          Diese Ansicht ist exklusiv für dich (walter@myc3.com) sichtbar. Hier siehst du live, wer wann welches KI-Modul aufruft.
-        </p>
+          {refreshing ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
+        </button>
       </div>
+
+      {/* Error Message */}
+      {errorMsg && (
+        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '12px 16px', borderRadius: '10px', fontSize: '0.9rem', marginBottom: '20px' }}>
+          ⚠️ <strong>Berechtigungs- oder Serverfehler:</strong> {errorMsg}
+          <p style={{ fontSize: '0.8rem', marginTop: '4px', color: '#b91c1c' }}>
+            Stelle sicher, dass du als <strong>walter@myc3.com</strong> angemeldet bist und dass die Cloud Functions lokal im Emulator laufen (oder auf Firebase deployt wurden).
+          </p>
+        </div>
+      )}
 
       {/* Metrics Dashboard Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px' }}>
@@ -153,7 +203,7 @@ export default function LogsTab() {
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '50px 0', gap: '12px' }}>
             <div className="auth-spinner" style={{ borderLeftColor: 'var(--brand-secondary)', width: '32px', height: '32px' }}></div>
-            <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Lade Audit-Logs in Echtzeit...</span>
+            <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Lade Audit-Logs vom sicheren Server...</span>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
@@ -211,6 +261,14 @@ export default function LogsTab() {
           </div>
         )}
       </div>
+
+      {/* Spinning Style Injection for the button icon */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
