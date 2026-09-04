@@ -35,7 +35,7 @@ async function getFirebaseAdmin() {
   if (!adminInstance) {
     const adminModule = await import("firebase-admin");
     const admin = adminModule.default || adminModule;
-    if (admin.apps.length === 0) {
+    if (!admin.apps.some((app: any) => app.name === "[DEFAULT]")) {
       admin.initializeApp({
         projectId: PROJECT_ID,
         storageBucket: "sheep-vertex-ai.firebasestorage.app"
